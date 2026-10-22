@@ -1,0 +1,263 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: ['**']
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Debug APK · ARM64
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    concurrency:
+      group: apk-build-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+      cancel-in-progress: true
+    outputs:
+      apk-artifact-id: ${{ steps.apk.outputs.artifact-id }}
+      apk-sha256: ${{ steps.package.outputs.apk-sha256 }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      PYTHONUTF8: '1'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Java 17
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: core/engineering/build.gradle.kts
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+
+      - name: Install pinned Android build dependencies
+        run: |
+          sdkmanager \
+            "platforms;android-34" \
+            "platforms;android-36" \
+            "build-tools;35.0.0" \
+            "ndk;25.1.8937393"
+
+      - name: Set up Gradle cache and validate wrapper
+        uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
+        with:
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
+
+      # PR builds never receive the optional stable signing key, including same-repository PRs.
+      - name: Restore optional CI debug signing key
+        if: github.event_name != 'pull_request'
+        env:
+          MCPY_DEBUG_KEYSTORE_BASE64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_BASE64 }}
+        run: |
+          if [[ -n "$MCPY_DEBUG_KEYSTORE_BASE64" ]]; then
+            umask 077
+            python - <<'PY'
+          import base64
+          import os
+          from pathlib import Path
+          target = Path.home() / '.android' / 'debug.keystore'
+          target.parent.mkdir(parents=True, exist_ok=True)
+          encoded = ''.join(os.environ['MCPY_DEBUG_KEYSTORE_BASE64'].split())
+          target.write_bytes(base64.b64decode(encoded, validate=True))
+          PY
+            keytool -list -keystore "$HOME/.android/debug.keystore" \
+              -storepass android -alias androiddebugkey > /dev/null
+          else
+            echo "No stable debug keystore configured; Gradle will generate an ephemeral debug key."
+          fi
+
+      - name: Install shared core for generator checks
+        run: python -m pip install 'mcpywrap-core==0.6.0' 'click==8.1.8' 'packaging==25.0' 'tomli==2.2.1' 'tomli-w==1.2.0'
+
+      - name: Check real shared-core project generation
+        run: python -m unittest discover -s tools/tests -p test_new_project.py
+
+      - name: Build APK, run unit tests and lint
+        run: |
+          sh tools/build.sh --no-daemon --stacktrace \
+            :core:workspace:testDebugUnitTest \
+            :runtime-core:testDebugUnitTest \
+            :feature:studio:testDebugUnitTest \
+            :app:lintDebug
+
+      - name: Check templates and APK contents
+        run: |
+          mkdir -p artifacts/ci
+          python tools/check-template.py
+          python tools/check-artifact.py > artifacts/ci/apk-check.json
+
+      - name: Prepare downloadable APK
+        id: package
+        run: |
+          apk_name="mcpywrap-android-debug-arm64-${GITHUB_SHA:0:7}.apk"
+          cp app/build/outputs/apk/debug/app-debug.apk "artifacts/ci/$apk_name"
+          cp app/build/outputs/apk/debug/output-metadata.json artifacts/ci/output-metadata.json
+          cd artifacts/ci
+          sha256sum "$apk_name" > SHA256SUMS
+          printf 'apk-sha256=%s\n' "$(cut -d ' ' -f 1 SHA256SUMS)" >> "$GITHUB_OUTPUT"
+
+      - name: Upload APK
+        id: apk
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          path: artifacts/ci/*.apk
+          archive: false
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Write build summary
+        env:
+          MCPY_APK_URL: ${{ steps.apk.outputs.artifact-url }}
+        run: |
+          {
+            echo '### Android debug APK · ARM64'
+            echo
+            printf '[Download APK](%s)\n\n' "$MCPY_APK_URL"
+            echo 'Android 11+ (API 30+). Install the official game runtime from inside the app.'
+            echo
+            echo 'SHA-256:'
+            echo '```text'
+            cat artifacts/ci/SHA256SUMS
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload checks and diagnostic reports
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: android-build-reports-${{ github.run_number }}-${{ github.run_attempt }}
+          path: |
+            artifacts/ci/*.json
+            artifacts/ci/SHA256SUMS
+            **/build/reports/
+            **/build/test-results/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Remove runner signing key
+        if: always()
+        run: rm -f "$HOME/.android/debug.keystore"
+
+  nightly:
+    name: Update fixed nightly release
+    needs: build
+    if: >-
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+      github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    # Finish an in-progress publication; only the build job is automatically cancelled.
+    concurrency:
+      group: android-nightly-${{ github.repository }}
+      cancel-in-progress: false
+    defaults:
+      run:
+        shell: bash
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      MCPY_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+
+    steps:
+      # A manually rerun older commit must not replace a newer nightly.
+      - name: Check this is still the default branch head
+        id: current
+        run: |
+          latest_sha=$(gh api "repos/$GH_REPO/git/ref/heads/$MCPY_DEFAULT_BRANCH" --jq '.object.sha')
+          if [[ "$latest_sha" == "$GITHUB_SHA" ]]; then
+            echo 'publish=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'publish=false' >> "$GITHUB_OUTPUT"
+            echo 'Nightly skipped: the default branch has a newer commit.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Download the checked APK from this build
+        if: steps.current.outputs.publish == 'true'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          artifact-ids: ${{ needs.build.outputs.apk-artifact-id }}
+          path: incoming
+          merge-multiple: true
+
+      - name: Verify and name nightly assets
+        if: steps.current.outputs.publish == 'true'
+        env:
+          MCPY_EXPECTED_SHA256: ${{ needs.build.outputs.apk-sha256 }}
+        run: |
+          shopt -s nullglob
+          apks=(incoming/*.apk)
+          [[ ${#apks[@]} -eq 1 ]] || { echo 'Expected exactly one APK from the build.' >&2; exit 1; }
+          [[ "$MCPY_EXPECTED_SHA256" =~ ^[0-9a-f]{64}$ ]] || { echo 'Missing build checksum.' >&2; exit 1; }
+          printf '%s  %s\n' "$MCPY_EXPECTED_SHA256" "${apks[0]}" | sha256sum --check --strict
+          mkdir -p nightly
+          cp "${apks[0]}" nightly/mcpywrap-android-nightly-arm64.apk
+          cd nightly
+          sha256sum mcpywrap-android-nightly-arm64.apk > SHA256SUMS
+
+      - name: Publish or update nightly
+        if: steps.current.outputs.publish == 'true'
+        run: |
+          # Check again after downloading, before any writes to GitHub.
+          latest_sha=$(gh api "repos/$GH_REPO/git/ref/heads/$MCPY_DEFAULT_BRANCH" --jq '.object.sha')
+          if [[ "$latest_sha" != "$GITHUB_SHA" ]]; then
+            echo 'Nightly skipped: a newer commit arrived during artifact download.' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          base = os.environ['GITHUB_SERVER_URL'] + '/' + os.environ['GH_REPO']
+          sha = os.environ['GITHUB_SHA']
+          run = os.environ['GITHUB_RUN_ID']
+          Path('nightly/notes.md').write_text(
+              '默认主分支的最新成功构建（Debug / ARM64，Android 11+）。\n\n'
+              f'- 源码提交：[{sha[:7]}]({base}/commit/{sha})\n'
+              f'- 构建记录：[Actions #{run}]({base}/actions/runs/{run})\n\n'
+              '固定下载入口：\n\n'
+              f'- [APK]({base}/releases/download/nightly/mcpywrap-android-nightly-arm64.apk)\n'
+              f'- [SHA-256]({base}/releases/download/nightly/SHA256SUMS)\n\n'
+              '首次运行时在 App 内安装官方游戏环境。持续覆盖安装需要构建使用相同的测试签名。\n',
+              encoding='utf-8')
+          PY
+
+          if ! gh release view nightly > /dev/null 2>&1; then
+            gh release create nightly --target "$GITHUB_SHA" --title Nightly \
+              --draft --prerelease --latest=false --notes-file nightly/notes.md
+          fi
+          gh release upload nightly nightly/mcpywrap-android-nightly-arm64.apk nightly/SHA256SUMS --clobber
+
+          if gh api "repos/$GH_REPO/git/ref/tags/nightly" --silent > /dev/null 2>&1; then
+            gh api --method PATCH "repos/$GH_REPO/git/refs/tags/nightly" \
+              -f sha="$GITHUB_SHA" -F force=true --silent
+          else
+            gh api --method POST "repos/$GH_REPO/git/refs" \
+              -f ref=refs/tags/nightly -f sha="$GITHUB_SHA" --silent
+          fi
+          gh release edit nightly --title Nightly --notes-file nightly/notes.md \
+            --draft=false --prerelease --latest=false
+          printf '[Nightly release](%s/%s/releases/tag/nightly)\n' "$GITHUB_SERVER_URL" "$GH_REPO" >> "$GITHUB_STEP_SUMMARY"

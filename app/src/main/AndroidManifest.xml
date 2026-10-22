@@ -1,0 +1,22 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-feature android:name="android.software.picture_in_picture" android:required="false" />
+    <application android:label="mcpy" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher_round" android:theme="@style/Theme.Mcpy" android:allowBackup="false" android:supportsRtl="true" android:largeHeap="true" android:appComponentFactory="dev.mcpy.game.GameComponentFactory" tools:replace="android:appComponentFactory">
+        <activity android:name=".MainActivity" android:exported="true" android:windowSoftInputMode="adjustResize">
+            <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
+        </activity>
+        <activity android:name="com.mojang.minecraftpe.MainActivity" android:process=":game" android:launchMode="singleTask" android:taskAffinity="dev.mcpywrap.android.game" android:exported="false" android:screenOrientation="landscape" android:supportsPictureInPicture="true" android:resizeableActivity="true" android:configChanges="orientation|screenSize|keyboardHidden|keyboard|uiMode|density|locale|layoutDirection|fontScale|navigation|screenLayout|smallestScreenSize|touchscreen">
+            <meta-data android:name="android.app.lib_name" android:value="minecraftpe"/>
+        </activity>
+        <service android:name="androidx.work.impl.foreground.SystemForegroundService" android:foregroundServiceType="dataSync" tools:node="merge" />
+        <provider android:name="androidx.core.content.FileProvider" android:authorities="${applicationId}.provider" android:exported="false" android:grantUriPermissions="true">
+            <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" />
+        </provider>
+    </application>
+</manifest>

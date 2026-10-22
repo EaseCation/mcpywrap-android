@@ -1,0 +1,21 @@
+{
+  "source": "EaseCation/mcpywrap/core/mcpywrap_core/ui/assets/mcpy.icon",
+  "files": {
+    "Assets/01-cube.svg": "d8f34e9bec549a3d4885a3bbdae154d7b8be3210046456b40ce15e7139de7ab1",
+    "Assets/02-prompt.svg": "59b000e3a32076f67abf19748eea3488eb9ffe1ec0f8cde1cad7df2eaf36ab5e",
+    "icon.json": "ecba5d041e871aa37d07e7dac9bd9d07a3f821e61f8874799135ebaf3b2adbf9"
+  },
+  "adaptiveLayerDp": 108,
+  "markScale": 0.8,
+  "safeDiameterDp": 66,
+  "actualCubeRadiusDp": 25.703234232290693,
+  "splashCanvasDp": 288,
+  "legacyPixels": [
+    48,
+    72,
+    96,
+    144,
+    192
+  ],
+  "storePixels": 512
+}

@@ -1,0 +1,16 @@
+{
+  "format_version": 1,
+  "header": {
+    "name": "欢迎语示例",
+    "description": "进入世界后显示一句欢迎语；直接编辑 WelcomeDemo/client.py。",
+    "uuid": "9981ddde-036a-4e65-bb6c-5ec163dbb3fd",
+    "version": [1, 0, 0]
+  },
+  "modules": [
+    {
+      "type": "data",
+      "uuid": "a9ebbd8d-2b6f-4bf2-a035-7f6377067eb4",
+      "version": [1, 0, 0]
+    }
+  ]
+}
