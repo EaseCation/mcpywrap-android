@@ -8,3 +8,5 @@ include(":app", ":core:model", ":core:designsystem", ":feature:studio")
 
 include(":core:workspace", ":feature:editor", ":runtime-core", ":game-host", ":game-plugin", ":engine-contract")
 include(":core:engineering")
+
+include(":core:application", ":core:bridge")

@@ -11,19 +11,29 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 /** 每个有限任务使用新核心进程，更新不会混用模块，也不停止 :game。 */
 class CoreWorkerService : Service() {
-    class ProgressReporter(private val reply:Messenger?) {
+    class ProgressReporter(private val reply:Messenger?, private val request:(String)->String) {
+        fun prepare(raw:String):String=request(raw)
         fun report(label:String) { runCatching { reply?.send(Message.obtain().apply{data=Bundle().apply{putString("progress",label)}}) } }
     }
     private val executor = Executors.newSingleThreadExecutor()
     private val accepted = AtomicBoolean(false)
+    private val preparation=java.util.concurrent.ConcurrentHashMap<String,java.util.concurrent.CompletableFuture<String>>()
     private val handler = Handler(Looper.getMainLooper())
     private val messenger = Messenger(Handler(Looper.getMainLooper()) { message ->
+        if(message.data.containsKey("preparationResult")){preparation[message.data.getString("id")]?.complete(message.data.getString("preparationResult"));return@Handler true}
         if (!accepted.compareAndSet(false, true)) return@Handler true
         val reply = message.replyTo
         val request = message.data.getString("request") ?: "{}"
         executor.execute {
             val response = try {
-                val progress=ProgressReporter(reply)
+                val progress=ProgressReporter(reply){raw->
+                    val id=java.util.UUID.randomUUID().toString()
+                    val future=java.util.concurrent.CompletableFuture<String>();preparation[id]=future
+                    try{
+                        reply?.send(Message.obtain().apply{data=Bundle().apply{putString("preparation",raw);putString("id",id)}})
+                        future.get(86460,java.util.concurrent.TimeUnit.SECONDS)
+                    }finally{preparation.remove(id)}
+                }
                 progress.report("正在启动工程核心")
                 if (!Python.isStarted()) Python.start(AndroidPlatform(this))
                 Python.getInstance().getModule("android_core").callAttr("execute", filesDir.absolutePath, request,progress).toString()

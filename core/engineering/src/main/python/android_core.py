@@ -32,10 +32,25 @@ def _store(private):
     return CoreStore(Path(private) / 'engineering/releases')
 
 
+_external = None
+REQUIRED_OPERATIONS = {'resolve', 'build', 'package', 'sync', 'init', 'mod', 'add', 'remove',
+                       'script.list', 'script.run', 'prepare_run'}
+
+
+def _require_operations(core):
+    missing = REQUIRED_OPERATIONS - set(core.describe().get('operations', []))
+    if missing:
+        raise ValueError('工程核心缺少当前应用所需能力：' + ', '.join(sorted(missing)) + '；请使用 0.6.2 或兼容新版核心')
+    return core
+
 def _configure(private, Core):
+    if _external is not None: return _require_operations(Core(_external.services(private)))
     from mcpywrap_core.host import HostServices
-    return Core(HostServices(python_executable=None, allow_processes=False,
-        lock_directory=Path(private)/'engineering/locks', cache_directory=WORKSPACE/'cache/mcpy'))
+    options = dict(python_executable=None, allow_processes=False,
+                   lock_directory=Path(private)/'engineering/locks', cache_directory=WORKSPACE/'cache/mcpy')
+    if 'project_metadata_files' in HostServices.__dataclass_fields__:
+        options['project_metadata_files'] = ('.mcpy-project.json',)
+    return _require_operations(Core(HostServices(**options)))
 
 
 def _load(private):
@@ -69,9 +84,28 @@ def _initialize_project(path, identity):
                         'target_dir': 'build'}}})
 
 
+def _validate_public_configuration(path, seen=None):
+    from mcpywrap_core.dependencies import read_project
+    seen = set() if seen is None else seen
+    path = Path(path).resolve()
+    if not path.is_relative_to(WORKSPACE.resolve()): raise ValueError('工程及依赖必须位于 /sdcard/mcpy')
+    if path in seen: return
+    seen.add(path)
+    config = read_project(path).get('tool', {}).get('mcpywrap', {})
+    if config.get('project_type','addon') != 'addon': raise ValueError('手机宿主暂不支持地图工程')
+    target = config.get('target_dir')
+    if target:
+        output = (path/target).resolve()
+        if not (output.is_relative_to(path) or output.is_relative_to((WORKSPACE/'build').resolve())):
+            raise ValueError('构建目标必须位于本作品或公共 build 目录')
+    for name in config.get('local_dependencies', []):
+        _validate_public_configuration(path/name, seen)
+
+
 def _validate_inputs(path):
     from mcpywrap_core.dependencies import read_project, DependencyService
     from mcpywrap_core.host import CapabilityUnavailable
+    _validate_public_configuration(path)
     config = read_project(path)
     settings = config.get('tool', {}).get('mcpywrap', {})
     if settings.get('project_type', 'addon') != 'addon':
@@ -83,10 +117,10 @@ def _validate_inputs(path):
         if not source.is_relative_to(WORKSPACE.resolve()):
             raise ValueError('工程依赖必须位于 /sdcard/mcpy：'+str(source))
         own = read_project(source).get('tool', {}).get('mcpywrap', {})
-        if own.get('code_libraries'):
-            raise CapabilityUnavailable('code_libraries', '代码库依赖的源码准备尚未接入，请使用已准备好的本地 Addon 依赖。')
-        if own.get('hooks') or own.get('consumer_prepare'):
-            raise CapabilityUnavailable('project_scripts', '此作品需要构建脚本；手机版尚未提供项目脚本执行环境，未跳过或执行脚本。')
+        if own.get('code_libraries') and _external is None:
+            raise CapabilityUnavailable('code_libraries', '此作品需要准备代码库依赖。请在「开发工具」连接开发端，再使用标准 mcpy sync 命令。')
+        if (own.get('hooks') or own.get('consumer_prepare')) and _external is None:
+            raise CapabilityUnavailable('project_scripts', '此作品需要构建脚本。请在「开发工具」连接开发端，再使用标准 mcpy 命令运行。')
     return packs, settings
 
 
@@ -161,6 +195,7 @@ def _catalog(version=None):
 
 
 def _health(core):
+    _require_operations(core)
     # 在公开测试目录执行真正的空资源包导出，不触碰用户作品。
     from mcpywrap_core.dependencies import write_project
     temp = WORKSPACE/'build'/('core-check-'+uuid.uuid4().hex)
@@ -212,7 +247,12 @@ def _update(private, version, notify):
 
 def execute(private, raw, progress=None):
     notify = (lambda label: progress.report(label)) if progress is not None else (lambda label: None)
+    global _external
     request = json.loads(raw)
+    if request.get('external_preparation'):
+        from external_host import ExternalHost
+        _external = ExternalHost(progress)
+    else: _external = None
     task = uuid.uuid4().hex
     log = WORKSPACE/'logs'/('engineering-'+task+'.log')
     try:
@@ -222,10 +262,30 @@ def execute(private, raw, progress=None):
             if operation in ('preview_project', 'create_project'):
                 from new_project import generate
                 result = generate(WORKSPACE, request.get('options'), _load(private), preview=operation=='preview_project', notify=notify)
+            elif operation == 'command':
+                core = _load(private)
+                path, identity = _project(request['folder'])
+                options = request.get('options', {})
+                if options.get('operation') != 'init': _initialize_project(path, identity)
+                from mcpywrap_core.host import host_scope
+                with host_scope(core.host):
+                    _validate_public_configuration(path)
+                    params = options.get('parameters', {})
+                    if options.get('operation') == 'init':
+                        output = (path/params.get('target_dir','build')).resolve()
+                        if not (output.is_relative_to(path) or output.is_relative_to((WORKSPACE/'build').resolve())):
+                            raise ValueError('构建目标必须位于本作品或公共 build 目录')
+                    if params.get('local_path'):
+                        dependency = (path/params['local_path']).resolve()
+                        if not dependency.is_relative_to(WORKSPACE.resolve()): raise ValueError('本地依赖必须位于公共工作区')
+                    result = core.execute(options['operation'], path, **params)
+                result['coreVersion'] = core.describe()['version']
             elif operation == 'status':
                 notify('正在读取工程核心状态')
                 core = _load(private)
-                result = {'version': core.describe()['version'], 'capabilities': core.describe(), 'selection': _store(private).selection()}
+                from jsonschema import Draft202012Validator
+                Draft202012Validator({'type':'integer'}).validate(7)
+                result = {'schema_validation':'2020-12', 'version': core.describe()['version'], 'capabilities': core.describe(), 'selection': _store(private).selection()}
             elif operation == 'check_update':
                 notify('正在连接更新源')
                 core = _load(private)
@@ -248,4 +308,4 @@ def execute(private, raw, progress=None):
         if log.parent.exists():
             with log.open('a', encoding='utf-8') as stream: traceback.print_exc(file=stream)
         return json.dumps({'ok': False, 'error': str(error), 'code': getattr(error, 'code', 'engineering_failed'),
-                           'hint': getattr(error, 'hint', None), 'log': str(log)}, ensure_ascii=False)
+                           'hint': getattr(error, 'hint', None), 'details': dict(getattr(error, 'details', None) or {}, log=str(log))}, ensure_ascii=False)

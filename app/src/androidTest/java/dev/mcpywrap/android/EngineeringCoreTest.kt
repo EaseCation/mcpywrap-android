@@ -18,6 +18,7 @@ class EngineeringCoreTest {
 
     @Test fun cancellingPreviewWaitsForWorkerAndNextRequestStillWorks()=runBlocking {
         repo.initialize()
+        val initialVersion=client.request("status").getString("version")
         val options=JSONObject().put("title","QA-CancelLoading-${System.nanoTime()}").put("modName","CancelMod")
             .put("version","1.0.0").put("scriptDir","CancelScripts").put("serverSystem","CancelServer").put("clientSystem","CancelClient")
         repeat(3){
@@ -25,12 +26,13 @@ class EngineeringCoreTest {
             val task=launch{client.request("preview_project",options=options,onProgress={started.complete(Unit)})}
             withTimeout(30_000){started.await()};task.cancelAndJoin()
             assertFalse(repo.projectDir(options.getString("title")).exists())
-            assertEquals("0.6.0",client.request("status").getString("version"))
+            assertEquals(initialVersion,client.request("status").getString("version"))
         }
     }
 
     @Test fun sharedCoreResolvesMergesExportsAndReimports()= runBlocking {
         repo.initialize()
+        val initialVersion=client.request("status").getString("version")
         val main=repo.createProject("QA-Core-${System.nanoTime()}")
         val dep=repo.createProject("QA-Dependency-${System.nanoTime()}","empty")
         val directory=repo.projectDir(main.folder);val dependency=repo.projectDir(dep.folder)
@@ -58,7 +60,7 @@ class EngineeringCoreTest {
         assertEquals("OWNER = 'main'\n",File(output,"behavior_pack/shared.py").readText())
         assertTrue(File(output,"behavior_pack/dependency.py").isFile)
         assertEquals(2,JSONObject(File(output,"behavior_pack/terrain_texture.json").readText()).getJSONObject("texture_data").length())
-        assertEquals("0.6.0",built.getString("coreVersion"))
+        assertEquals(initialVersion,built.getString("coreVersion"))
         val exported=client.request("package",main.folder)
         ZipFile(exported.getString("artifact")).use{zip->assertNotNull(zip.getEntry("core-fixture_bp/dependency.py"));assertNotNull(zip.getEntry("core-fixture_bp/entities/"))}
         val imported=File(exported.getString("artifact")).inputStream().use{repo.importZip(it,"QA-Reimport-${System.nanoTime()}")}
@@ -96,10 +98,10 @@ class EngineeringCoreTest {
     @Test fun releaseCanBeInstalledVerifiedAndRolledBackWithoutRestartingEditor()=runBlocking {
         repo.initialize()
         val before=client.request("status")
-        val update=client.request("update",version="0.6.0")
+        val update=client.request("update",version="0.6.2")
         assertTrue(update.getBoolean("verified"))
-        assertEquals("45e1e37fab485476e430e2587b65e78d17af38e561fc5663306c359c2d751d80",update.getJSONObject("selection").getString("current"))
-        assertEquals("0.6.0",client.request("status").getString("version"))
+        assertEquals("969e892118017e1a6b2b9ec8384522ff4573b217364ff8e4b1a73c3006942012",update.getJSONObject("selection").getString("current"))
+        assertEquals("0.6.2",client.request("status").getString("version"))
         val after=client.request("rollback")
         assertEquals(before.getString("version"),after.getString("version"))
         val file=File("/sdcard/mcpy/logs/product-evidence/core-update.json");file.parentFile.mkdirs()
