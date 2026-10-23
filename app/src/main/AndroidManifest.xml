@@ -6,12 +6,28 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-feature android:name="android.software.picture_in_picture" android:required="false" />
-    <application android:label="mcpy" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher_round" android:theme="@style/Theme.Mcpy" android:allowBackup="false" android:supportsRtl="true" android:largeHeap="true" android:appComponentFactory="dev.mcpy.game.GameComponentFactory" tools:replace="android:appComponentFactory">
+    <queries>
+        <package android:name="com.miui.securitycenter"/>
+        <package android:name="com.miui.powerkeeper"/>
+        <intent><action android:name="android.settings.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/><data android:scheme="package"/></intent>
+        <intent><action android:name="android.settings.VIEW_ADVANCED_POWER_USAGE_DETAIL"/><data android:scheme="package"/></intent>
+        <intent><action android:name="android.settings.IGNORE_BATTERY_OPTIMIZATION_SETTINGS"/></intent>
+        <intent><action android:name="android.settings.APPLICATION_DETAILS_SETTINGS"/><data android:scheme="package"/></intent>
+    </queries>
+    <application android:networkSecurityConfig="@xml/network_security_config" android:label="mcpy" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher_round" android:theme="@style/Theme.Mcpy" android:allowBackup="false" android:supportsRtl="true" android:largeHeap="true" android:appComponentFactory="dev.mcpy.game.GameComponentFactory" tools:replace="android:appComponentFactory">
         <activity android:name=".MainActivity" android:exported="true" android:windowSoftInputMode="adjustResize">
             <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="mcpy" android:host="service" android:path="/start"/>
+            </intent-filter>
         </activity>
-        <activity android:name="com.mojang.minecraftpe.MainActivity" android:process=":game" android:launchMode="singleTask" android:taskAffinity="dev.mcpywrap.android.game" android:exported="false" android:screenOrientation="landscape" android:supportsPictureInPicture="true" android:resizeableActivity="true" android:configChanges="orientation|screenSize|keyboardHidden|keyboard|uiMode|density|locale|layoutDirection|fontScale|navigation|screenLayout|smallestScreenSize|touchscreen">
+        <activity android:name=".GamePipLauncherActivity" android:exported="false" android:taskAffinity="dev.mcpywrap.android.game" android:excludeFromRecents="true" android:theme="@style/Theme.Mcpy.PipLauncher" />
+        <activity android:name="com.mojang.minecraftpe.MainActivity" android:process=":game" android:launchMode="singleTop" android:taskAffinity="dev.mcpywrap.android.game" android:exported="false" android:theme="@style/Theme.Mcpy.PipLauncher" android:supportsPictureInPicture="true" android:resizeableActivity="true" android:configChanges="orientation|screenSize|keyboardHidden|keyboard|uiMode|density|locale|layoutDirection|fontScale|navigation|screenLayout|smallestScreenSize|touchscreen">
             <meta-data android:name="android.app.lib_name" android:value="minecraftpe"/>
         </activity>
         <service android:name="androidx.work.impl.foreground.SystemForegroundService" android:foregroundServiceType="dataSync" tools:node="merge" />

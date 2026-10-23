@@ -20,3 +20,9 @@ Minecraft / NetEase engine code and assets are obtained on the user's device fro
 - mcpywrap-core 0.6.0: MIT, https://pypi.org/project/mcpywrap-core/0.6.0/ . Installed from the published wheel, not a copied fork. Its packaged license files are retained by the Python packaging runtime.
 - Chaquopy 17.1.0: https://github.com/chaquo/chaquopy ; embedded CPython 3.13 and its bundled standard-library dependencies retain their upstream notices. See https://chaquo.com/chaquopy/doc/current/license.html .
 - click 8.1.8 (BSD-3-Clause), packaging 25.0 (Apache-2.0/BSD-2-Clause), tomli 2.2.1 and tomli-w 1.2.0 (MIT) are pinned tool dependencies. They do not enter exported game packs.
+
+## Local development service and schema validation
+
+- Ktor Server CIO / WebSockets 3.3.1: Apache-2.0, https://github.com/ktorio/ktor . Provides the authenticated loopback HTTP/WebSocket service.
+- jsonschema 4.25.1: MIT, https://github.com/python-jsonschema/jsonschema . Uses the upstream Draft 2020-12 validator in the embedded core.
+- rpds-py 0.27.1: MIT, https://github.com/crate-py/rpds . The Android extension is built from the checksum-verified upstream source, with its license included in the wheel. `tools/build-rpds.py` records source checksums and reproduces the build using Rust 1.88.0 and the pinned Android NDK; it does not replace validation with a stub.

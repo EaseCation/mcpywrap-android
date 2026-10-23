@@ -65,15 +65,15 @@ fun StudioApp(vm: StudioViewModel = viewModel()) {
     fun run(project:WorkProject,selectedWorld:WorkWorld?=null){world=selectedWorld;if(s.phase in listOf("loading","running","saving")){dialog="apply"}else vm.run(project,selectedWorld)}
     Scaffold(
         snackbarHost={SnackbarHost(snackbar)},
-        topBar={TopAppBar(title={Column{Text(if(s.opened!=null)s.opened!!.path.substringAfterLast('/') else if(s.tab==0)s.selected?.let{if(s.instancesOpen)it.name+" · 测试实例" else it.name}?:"作品" else "设置",maxLines=1,overflow=TextOverflow.Ellipsis);if(s.opened!=null)Text(if(s.dirty)"未保存" else "已保存",style=MaterialTheme.typography.labelSmall)}},
+        topBar={TopAppBar(title={Column{Text(if(s.opened!=null)s.opened!!.path.substringAfterLast('/') else if(s.tab==0)s.selected?.let{if(s.instancesOpen)it.name+" · 测试实例" else it.name}?:"作品" else if(s.tab==1)"开发工具" else "设置",maxLines=1,overflow=TextOverflow.Ellipsis);if(s.opened!=null)Text(if(s.dirty)"未保存" else "已保存",style=MaterialTheme.typography.labelSmall)}},
             navigationIcon={if(s.selected!=null||s.opened!=null)IconButton(onClick={back()}){Icon(Icons.AutoMirrored.Outlined.ArrowBack,"返回")}},
             actions={if(s.opened!=null){TextButton(onClick=vm::save,enabled=s.dirty&&!s.busy){Text("保存")}}else if(s.permission){IconButton(onClick=vm::refresh,enabled=!s.busy){Icon(Icons.Outlined.Refresh,"刷新")}}})},
-        bottomBar={if(s.opened==null)NavigationBar{listOf("作品","设置").forEachIndexed{i,label->NavigationBarItem(selected=s.tab==i,onClick={vm.tab(i)},icon={Icon(when(i){0->Icons.Outlined.Folder;else->Icons.Outlined.Settings},null)},label={Text(label)})}}}
+        bottomBar={if(s.opened==null)NavigationBar{listOf("作品","开发工具","设置").forEachIndexed{i,label->NavigationBarItem(selected=s.tab==i,onClick={vm.tab(i)},icon={Icon(when(i){0->Icons.Outlined.Folder;1->Icons.Outlined.Code;else->Icons.Outlined.Settings},null)},label={Text(label)})}}}
     ){padding->Column(Modifier.fillMaxSize().padding(padding)){
         if(s.busy&&!s.waitModal&&s.workspaceLoaded)LoadingFeedback(s.progress,Modifier.fillMaxWidth().padding(12.dp).testTag("operation-progress"))
-            if(s.workspaceLoaded&&s.installing&&s.tab!=1){
+            if(s.workspaceLoaded&&s.installing&&s.tab!=2){
                 Surface(color=MaterialTheme.colorScheme.secondaryContainer){Column(Modifier.fillMaxWidth().padding(12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
-                    Row(verticalAlignment=Alignment.CenterVertically){Text(s.installText,Modifier.weight(1f),style=MaterialTheme.typography.bodyMedium);TextButton(onClick={vm.tab(1)}){Text("查看下载")}}
+                    Row(verticalAlignment=Alignment.CenterVertically){Text(s.installText,Modifier.weight(1f),style=MaterialTheme.typography.bodyMedium);TextButton(onClick={vm.tab(2)}){Text("查看下载")}}
                     s.installPercent?.let{LinearProgressIndicator(progress={it.coerceIn(0f,1f)},modifier=Modifier.fillMaxWidth())}?:LinearProgressIndicator(Modifier.fillMaxWidth())
                 }}
             }
@@ -91,10 +91,10 @@ fun StudioApp(vm: StudioViewModel = viewModel()) {
             Text(s.opened!!.path,Modifier.padding(horizontal=16.dp),style=MaterialTheme.typography.labelSmall,maxLines=2)
             key(s.selected!!.folder,s.opened!!.path){SourceEditor(s.opened!!.path,s.draft,vm::draft,Modifier.weight(1f))}
         }else{
-            if(s.phase!="idle"&&s.session.isNotBlank()){
+            if(s.phase!="idle"&&s.session.isNotBlank()&&(s.tab==0||s.phase in listOf("loading","running","saving","failed","interrupted","unknown","unresponsive","waiting_user"))){
                 Surface(color=MaterialTheme.colorScheme.secondaryContainer){Row(Modifier.fillMaxWidth().padding(horizontal=16.dp,vertical=4.dp),verticalAlignment=Alignment.CenterVertically){
-                    Column(Modifier.weight(1f)){Text(when(s.phase){"loading"->"游戏启动中";"running"->"游戏正在运行";"saving"->"正在保存世界";"saved"->"世界已保存";"interrupted"->"游戏已中断";else->"启动失败"},style=MaterialTheme.typography.labelLarge);if(s.phase in listOf("loading","saving"))Text(s.runtimeLoading.ifBlank{if(s.phase=="saving")"等待游戏完成存档写入" else "正在准备游戏"},style=MaterialTheme.typography.bodySmall);if(s.runtimeError.isNotBlank())Text("有运行错误 · 查看日志",style=MaterialTheme.typography.labelSmall)}
-                    if(s.phase in listOf("running","loading","failed")){if(s.phase=="running")TextButton(onClick=vm::showGame){Text("游戏")};TextButton(onClick=vm::stop,enabled=!s.busy){Text("保存退出")}}
+                    Column(Modifier.weight(1f)){Text(when(s.phase){"loading"->"游戏启动中";"running"->"游戏正在运行";"saving"->"正在保存世界";"saved"->"世界已保存";"interrupted"->"游戏已中断";"unknown"->"游戏启动未确认";"unresponsive"->"游戏状态未更新";"waiting_user"->"作品已准备，等待继续启动";"cancelled"->"启动已取消";else->"启动失败"},style=MaterialTheme.typography.labelLarge);if(s.phase in listOf("loading","saving"))Text(s.runtimeLoading.ifBlank{if(s.phase=="saving")"等待游戏完成存档写入" else "正在准备游戏"},style=MaterialTheme.typography.bodySmall);if(s.runtimeError.isNotBlank()&&s.phase!="waiting_user")Text("有运行错误 · 查看日志",style=MaterialTheme.typography.labelSmall)}
+                    if(s.phase in listOf("running","loading","failed","unknown","unresponsive","waiting_user")){if(s.phase=="running")TextButton(onClick=vm::showGame){Text("游戏")};if(s.phase=="waiting_user")TextButton(onClick=vm::resumeLaunch,enabled=!s.busy){Text("继续")};TextButton(onClick=vm::stop,enabled=!s.busy){Text(if(s.phase=="waiting_user")"取消"else "保存退出")}}
                     TextButton(onClick=vm::logs,enabled=!s.busy){Text("日志")}
                 }}
             }
@@ -166,7 +166,8 @@ fun StudioApp(vm: StudioViewModel = viewModel()) {
                     }
                     Text("/sdcard/mcpy/projects/${p.folder}",Modifier.padding(horizontal=16.dp,vertical=6.dp),style=MaterialTheme.typography.labelSmall,maxLines=1,overflow=TextOverflow.Ellipsis)
                 }
-                1 -> Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),verticalArrangement=Arrangement.spacedBy(18.dp)){
+                1 -> DevelopmentToolsScreen()
+                2 -> Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),verticalArrangement=Arrangement.spacedBy(18.dp)){
                     Text("运行环境",style=MaterialTheme.typography.headlineSmall)
                     Card{Column(Modifier.padding(20.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
                         Text(if(s.runtimeReady)"已安装" else "安装官方开发者内核",style=MaterialTheme.typography.titleLarge)

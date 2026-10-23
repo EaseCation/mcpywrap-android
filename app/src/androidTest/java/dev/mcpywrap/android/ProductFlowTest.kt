@@ -80,8 +80,10 @@ class ProductFlowTest {
         tap("设置")
         ready("工程核心")
         compose.onNodeWithText("工程核心").performScrollTo().assertIsDisplayed()
-        ready("mcpywrap-core 0.6.0")
-        compose.onNodeWithText("mcpywrap-core 0.6.0").assertIsDisplayed()
+        val context=InstrumentationRegistry.getInstrumentation().targetContext
+        val version=runBlocking{dev.mcpywrap.engineering.EngineeringClient(context).request("status").getString("version")}
+        ready("mcpywrap-core $version")
+        compose.onNodeWithText("mcpywrap-core $version").assertIsDisplayed()
         compose.onNodeWithText("检查更新").performScrollTo().assertIsDisplayed()
         screenshot("engineering-settings")
     }

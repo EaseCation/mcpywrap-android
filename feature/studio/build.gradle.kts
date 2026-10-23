@@ -7,6 +7,8 @@ android {
 }
 kotlin { jvmToolchain(17) }
 dependencies {
+    implementation(project(":core:application"))
+    implementation(project(":core:bridge"))
     testImplementation("junit:junit:4.13.2")
     implementation(project(":core:engineering"))
     implementation("androidx.work:work-runtime-ktx:2.10.5")

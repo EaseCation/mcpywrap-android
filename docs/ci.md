@@ -24,10 +24,15 @@ Nightly 保留同一预发布和下载文件名，标签指向对应源码提交
 
 启用 GitHub Actions，允许工作流使用 `GITHUB_TOKEN` 写入 Release 和移动 `nightly` 标签。固定 Nightly 必须保持可编辑，不能设为 immutable release；无需配置 PAT。
 
-建议添加 Actions Secret `ANDROID_DEBUG_KEYSTORE_BASE64`，内容为固定 Debug keystore 的 Base64 编码，别名 `androiddebugkey`，store/key 密码均为 `android`。如果需要覆盖本机安装包，应使用与原 APK 相同的 Debug keystore。不要使用正式发行密钥。
+主分支发布必须配置 Actions Secret `ANDROID_DEBUG_KEYSTORE_BASE64`，内容为固定 Debug keystore 的 Base64 编码，别名 `androiddebugkey`，store/key 密码均为 `android`。如果需要覆盖本机安装包，应使用与原 APK 相同的 Debug keystore。不要使用正式发行密钥。
 
-未配置该 Secret 仍可构建，但每次可能使用不同临时签名，无法保证覆盖安装。PR 构建始终使用临时密钥。
+缺少该 Secret 时主分支构建会明确失败，不发布随机签名的 Nightly。PR 构建始终使用临时密钥，其他分支在未配置 Secret 时也可使用临时密钥。
 
 ## 安装要求
 
 产物为 Android 11+ / ARM64 测试签名 APK。首次运行时在 App 内安装官方游戏环境。CI 不包含官方游戏资源，也不执行真实游戏设备验收。
+
+
+## 0.5.1 签名迁移
+
+0.5.1 是固定 Nightly 签名的起点。早期 Nightly 和本地 ADB 包可能使用其他签名，因此不能直接覆盖安装。切换前保留内部存储的 `mcpy` 文件夹，卸载旧 App 后安装 Nightly；公共作品与存档仍在该文件夹中，私有运行环境和配对需要重新配置。后续同签名 Nightly 可直接覆盖安装。

@@ -41,6 +41,7 @@ class StudioViewModel(app: Application): AndroidViewModel(app) {
     private val runtime=RuntimeRepository(app)
     private val importer=ProjectImporter(app,repository)
     private val engineering=EngineeringClient(app)
+    private val application=dev.mcpywrap.application.ApplicationOperations.get(app)
     private var coreInspected=false
     private val mutable=MutableStateFlow(ProductState(smallWindow=app.getSharedPreferences("settings",0).getBoolean("pip",true)))
     val state=mutable.asStateFlow()
@@ -66,7 +67,7 @@ class StudioViewModel(app: Application): AndroidViewModel(app) {
         if(state.value.busy)return
         mutable.update{it.copy(busy=true,progress=label,operationTitle=label,waitModal=modal,error=null)}
         operationJob=viewModelScope.launch {
-            try { withContext(Dispatchers.IO){require(Environment.isExternalStorageManager()){ "需要允许所有文件访问，文件仍保留在 /sdcard/mcpy" };repository.initialize();block();reload()} }
+            try { application.mutate{require(Environment.isExternalStorageManager()){ "需要允许所有文件访问，文件仍保留在 /sdcard/mcpy" };repository.initialize();block();reload()} }
             catch(e:CancellationException){
                 mutable.update{if(it.workspaceLoadState==ContentLoadState.LOADING)it.copy(workspaceLoadState=if(it.workspaceLoaded)ContentLoadState.READY else ContentLoadState.NOT_LOADED)else it}
                 throw e
@@ -87,7 +88,7 @@ class StudioViewModel(app: Application): AndroidViewModel(app) {
         }catch(error:Exception){mutable.update{it.copy(workspaceLoadState=ContentLoadState.ERROR)};throw error}
     }
     private suspend fun coreRequest(operation:String,folder:String?=null,version:String?=null,options:org.json.JSONObject?=null)=
-        engineering.request(operation,folder,version,options){message->mutable.update{if(it.busy)it.copy(progress=message,waitModal=it.waitModal||(operation=="update"&&message.contains("校验并安装")))else it}}
+        engineering.request(operation,folder,version,options,onProgress={message->mutable.update{if(it.busy)it.copy(progress=message,waitModal=it.waitModal||(operation=="update"&&message.contains("校验并安装")))else it}})
     fun refresh() {
         val allowed=Environment.isExternalStorageManager();mutable.update{it.copy(permission=allowed)}
         if(allowed&&!state.value.busy)action("读取工作区"){
@@ -191,34 +192,16 @@ class StudioViewModel(app: Application): AndroidViewModel(app) {
     fun setSmallWindow(value:Boolean){getApplication<Application>().getSharedPreferences("settings",0).edit().putBoolean("pip",value).apply();mutable.update{it.copy(smallWindow=value)}}
     fun install(){mutable.update{it.copy(installing=true,installText="正在准备下载任务",installPercent=null)};RuntimeInstallWorker.start(getApplication())}
     fun pauseInstall(){mutable.update{it.copy(installText="正在暂停下载")};RuntimeInstallWorker.pause(getApplication())}
-    fun stop()=action("请求保存退出"){repository.requestStop()}
+    fun stop()=action("结束当前会话"){application.stopCurrent()}
+    fun resumeLaunch()=action("继续启动已准备的作品"){application.resumePendingLaunch()}
     fun run(project:WorkProject,world:WorkWorld?=null,replace:Boolean=false) {
         if(state.value.dirty){error("请先保存正在编辑的文件");return}
-        if(!state.value.runtimeReady){mutable.update{it.copy(tab=1,notice="先安装运行环境，作品已保留")};return}
+        if(!state.value.runtimeReady){mutable.update{it.copy(tab=2,notice="先安装运行环境，作品已保留")};return}
         action("准备测试世界") {
-            if(repository.active()){
-                mutable.update{it.copy(progress="等待游戏保存退出")}
-                require(replace){"游戏正在运行，请先保存退出"};repository.requestStop()
-                withTimeout(90000){while(repository.active())delay(500)}
-                check(repository.sessionStatus()?.optString("phase")=="saved"){"未确认游戏保存成功，已停止切换"}
-                delay(750)
-            }
-            mutable.update{it.copy(progress="解析依赖并组装作品")}
-            val result=coreRequest("build",project.folder)
-            mutable.update{it.copy(coreVersion=result.getString("coreVersion"),progress="正在部署到测试实例",waitModal=true)}
-            val target=world?:repository.defaultWorld(project)
-            val plan=repository.prepareRun(project,target,File(result.getString("output")))
-            try { withContext(Dispatchers.Main) {
-                getApplication<Application>().startActivity(Intent().setClassName(getApplication<Application>(),"com.mojang.minecraftpe.MainActivity")
-                    .putExtra("data",plan.data.path).putExtra("session",plan.session.path).putExtra("smallWindow",state.value.smallWindow).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-            } }catch(e:Exception){WorkspaceRepository.atomic(File(plan.session,"status.json"),org.json.JSONObject().put("phase","failed").put("error",e.message).toString().toByteArray());throw e}
+            application.start(project,world,replace,state.value.smallWindow,progress={label->mutable.update{it.copy(progress=label)}})
         }
     }
-    fun showGame()=action("显示游戏"){
-        require(repository.active()){ "游戏已经退出，请重新开始测试" }
-        val config=requireNotNull(repository.session())
-        withContext(Dispatchers.Main){getApplication<Application>().startActivity(Intent().setClassName(getApplication<Application>(),"com.mojang.minecraftpe.MainActivity").putExtra("data",config.getString("data")).putExtra("session",config.getString("session")).putExtra("smallWindow",state.value.smallWindow).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT))}
-    }
+    fun showGame()=action("显示游戏"){application.showGame()}
     fun logs()=action("读取运行日志") {
         val session=state.value.session;require(session.isNotBlank()){ "还没有运行记录" }
         val file=File(session,"runtime.log");val log=if(file.isFile)java.io.RandomAccessFile(file,"r").use{f->f.seek((f.length()-16000).coerceAtLeast(0));val bytes=ByteArray((f.length()-f.filePointer).toInt());f.readFully(bytes);bytes.toString(Charsets.UTF_8)} else "暂时没有日志"

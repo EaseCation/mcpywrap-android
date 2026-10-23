@@ -8,6 +8,8 @@
 | `core:designsystem` | 官方 Compose Material 3 1.4.0、明暗主题 |
 | `core:model` | 公共目录常量、原样打包的普通模板；不含原型状态机 |
 | `core:engineering` | 发布版 mcpywrap-core、独立核心工作进程、版本安装与回滚；工程调用使用共享 Python API |
+| `core:application` | UI 与 HTTP 共用的工程/游戏操作、互斥锁、启动恢复与诊断 |
+| `core:bridge` | 回环 HTTP/WebSocket、工作区授权、幂等任务与用户主动开启的前台服务 |
 | `core:workspace` | 公共磁盘仓库、原子保存、草稿、冲突检测、导入、快照、世界与回收站 |
 | `feature:editor` | Sora + TextMate 编辑器；不执行 Python、不生成业务源码 |
 | `feature:studio` | Compose 界面、不可变状态 / StateFlow / ViewModel、异步操作编排 |
@@ -30,17 +32,17 @@
 
 ## 与 mcpy 的边界
 
-Android 负责文件管理、组件输入布局整理、游戏环境安装、实例部署与 Android 生命周期。依赖解析、资源合并、构建、打包由内置的发布版 `mcpywrap-core==0.6.0` 负责。运行和导出不再直接扫描源工程后跳过依赖处理。
+Android 负责文件管理、组件输入布局整理、游戏环境安装、实例部署与 Android 生命周期。依赖解析、资源合并、构建、打包由内置的发布版 `mcpywrap-core==0.6.2` 负责。运行和导出不再直接扫描源工程后跳过依赖处理。
 
 `core:engineering` 使用 Chaquopy 17.1.0 / CPython 3.13，运行在不导出的 `:core` Service。`EngineeringClient` 在 App 内串行调度；每个有限请求使用新工作进程，返回结果后等待 Binder 死亡再接受下一请求，避免升级时混合 Python 模块。界面与 `:game` 进程不载入工具 Python。
 
 普通组件首次构建时会新增标准 `pyproject.toml`，源码保持原样；已有 TOML 不改写。构建结果位于配置的作品内子目录或 `/sdcard/mcpy/build`；分发 ZIP 由共享核心生成，再保存到 `/sdcard/mcpy/exports`。导入普通单包/双包时只规范行为包和资源包目录名称；已有工程保留其结构。
 
-目前支持 Addon 与已准备好的本地组件依赖。Git URL 导入仍由 JGit 完成，但工程的 Git/pip 依赖获取、构建 hooks、消费者准备环境和代码库获取尚未接入；缺少能力会报错，禁止跳过或回退到另一套组装规则。地图工程尚未接入。
+支持 Addon、本地组件与通过已配对开发端准备的 Git/pip 依赖。Git URL 导入由 JGit 完成；工程依赖获取、构建 hooks 和消费者准备由共享核心发出分阶段计划，开发端执行工具阶段并交回结果，App 核心校验后继续组装。缺少准备能力时明确要求使用开发端，不跳过或回退到另一套组装规则。地图工程尚未接入。
 
 工程核心更新从固定 HTTPS PyPI 元数据获得版本、下载地址和 SHA-256，只接受 `files.pythonhosted.org` 的纯 Python wheel。共享 `CoreStore` 校验版本/API/基础依赖/路径/摘要后执行真实构建健康检查，成功才切换。失败保留原版。核心版本和协调锁属于可重建的私有工具环境，项目与输出始终留在公共目录。更新信任基于固定 PyPI HTTPS 来源，不宣称额外实现了发布者签名链。
 
-每次任务日志位于 `/sdcard/mcpy/logs/engineering-*.log`。工程核心使用内部 Binder 接入，尚未公开 HTTP/WS 服务或外部 Agent 授权接口，也未实现后台持久任务队列。进程被系统结束时明确报告任务未确认完成，不自动重放修改操作。
+每次任务日志位于 `/sdcard/mcpy/logs/engineering-*.log`。工程核心使用内部 Binder 接入；外部工具通过经授权的回环 HTTP/WS 服务调用同一应用服务。任务和准备阶段回执持久保存，系统结束服务后的未完成任务报告中断，不自动重放修改操作。详细协议见[本机开发接口](local-host-api.md)。
 
 游戏中的 Python 仍来自官方运行内核，与工具 CPython 完全分离。设置中的“工程核心”更新不升级游戏内核、不停止运行中的游戏，也不要求重新安装 APK。
 

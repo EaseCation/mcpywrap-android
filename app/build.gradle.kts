@@ -3,7 +3,7 @@ android {
     namespace = "dev.mcpywrap.android"; compileSdk = 36
     defaultConfig {
         applicationId = "dev.mcpywrap.android"
-        minSdk = 30; targetSdk = 36; versionCode = 5; versionName = "0.5.0"; ndk { abiFilters += "arm64-v8a" }
+        minSdk = 30; targetSdk = 36; versionCode = 6; versionName = "0.5.1"; ndk { abiFilters += "arm64-v8a" }
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     compileOptions { isCoreLibraryDesugaringEnabled = true; sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
@@ -13,12 +13,14 @@ android {
 }
 kotlin { jvmToolchain(17) }
 dependencies {
+    implementation(project(":core:bridge"))
     implementation(project(":core:engineering"))
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
     implementation(project(":runtime-core")); implementation(project(":game-host")); implementation(project(":core:workspace")); implementation(project(":feature:editor")); implementation(project(":feature:studio")); implementation(project(":core:designsystem")); implementation(project(":core:model"))
     implementation("androidx.activity:activity-compose:1.10.1")
     implementation("androidx.core:core-ktx:1.16.0")
     implementation("androidx.work:work-runtime-ktx:2.10.5")
+    androidTestImplementation(project(":core:application"))
     androidTestImplementation("androidx.work:work-runtime-ktx:2.10.5")
     androidTestImplementation("io.github.rosemoe:editor:0.24.4")
     androidTestImplementation(platform("androidx.compose:compose-bom:2025.10.01"))

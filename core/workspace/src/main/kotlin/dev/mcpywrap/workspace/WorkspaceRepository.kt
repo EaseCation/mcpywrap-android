@@ -63,7 +63,13 @@ class WorkspaceRepository(val root: File = File("/sdcard/mcpy")) {
     }
     fun initialize() { listOf("projects", "mods", "worlds", "build", "exports", "logs", "trash").forEach { check(File(root, it).isDirectory || File(root, it).mkdirs()) { "无法访问 /sdcard/mcpy，请允许所有文件访问" } } }
     private fun writeJson(file: File, data: JSONObject) = atomic(file, data.toString(2).toByteArray())
-    private fun readJson(file: File) = JSONObject(file.readText())
+    private fun readJson(file: File):JSONObject {
+        repeat(3){attempt->
+            try{return JSONObject(file.bufferedReader().use{it.readText()})}
+            catch(error:org.json.JSONException){if(attempt==2)throw error;Thread.sleep(10)}
+        }
+        error("Cannot read JSON")
+    }
     fun projectDir(folder: String): File { name(folder); return inside(File(root, "projects"), folder) }
     fun worldDir(folder: String): File {
         require(folder.split('/').size in 1..2)
@@ -428,25 +434,31 @@ class WorkspaceRepository(val root: File = File("/sdcard/mcpy")) {
                 val target=File(installed,kind);val old=File(installed,"$kind.previous");old.deleteRecursively();if(target.exists())check(target.renameTo(old));check(stage.renameTo(target));old.deleteRecursively()
             }
             val session=File(root,"logs/session-${UUID.randomUUID()}").apply{mkdirs()}
-            val config=JSONObject().put("worldId","local-world").put("worldName",instance.name).put("behavior",behavior).put("resource",resource).put("sourceRoots",sourceRoots).put("revision",revision).put("project",owner.folder).put("projectId",owner.id).put("instanceId",instance.id).put("data",data.path).put("session",session.path)
-            writeJson(File(session,"status.json"),JSONObject().put("phase","loading").put("heartbeat",System.currentTimeMillis()))
+            val config=JSONObject().put("created_at",System.currentTimeMillis()).put("worldId","local-world").put("worldName",instance.name).put("behavior",behavior).put("resource",resource).put("sourceRoots",sourceRoots).put("revision",revision).put("project",owner.folder).put("projectId",owner.id).put("instanceId",instance.id).put("data",data.path).put("session",session.path)
+            writeJson(File(session,"status.json"),JSONObject().put("phase","launch_pending").put("created_at",System.currentTimeMillis()).put("stage","deployed"))
             writeJson(File(session,"launch.json"),config);writeJson(File(root,"logs/active.json"),config)
             val metadata=readJson(File(data,"world.json")).put("revision",revision);writeJson(File(data,"world.json"),metadata)
             return RunPlan(data,session,instance.name)
         } finally { snapshot.deleteRecursively() }
     }
     fun session(): JSONObject? { val f=File(root,"logs/active.json");return if(f.isFile)readJson(f)else null }
-    fun sessionStatus(): JSONObject? {
-        val config=session()?:return null;val dir=File(config.getString("session"));require(dir.canonicalPath.startsWith(File(root,"logs").canonicalPath+"/"))
-        val status=File(dir,"status.json");if(!status.isFile)return null
-        return readJson(status).also { if(it.optString("phase") in listOf("loading","running","saving") && System.currentTimeMillis()-it.optLong("heartbeat")>15000)it.put("phase","interrupted") }
+    fun sessionStatus(record:JSONObject?=session()): JSONObject? {
+        val config=record?:return null
+        val dir=inside(File(root,"logs"),File(config.getString("session")).name)
+        val status=File(dir,"status.json")
+        val raw=if(status.isFile)runCatching{readJson(status)}.getOrElse{JSONObject().put("phase","unknown")}else JSONObject().put("phase","unknown")
+        val bootstrap=File(dir,"bootstrap.json").takeIf{it.isFile}?.let{runCatching{readJson(it)}.getOrNull()}
+        val pid=raw.optInt("pid",bootstrap?.optInt("pid",0)?:0)
+        val alive=if(pid<=0)null else try{android.system.Os.kill(pid,0);true}catch(e:android.system.ErrnoException){if(e.errno==android.system.OsConstants.ESRCH)false else null}catch(_:Exception){null}
+        val created=config.optLong("created_at",raw.optLong("created_at",if(raw.optInt("pid")==0)raw.optLong("heartbeat")else File(dir,"launch.json").lastModified()))
+        return SessionObservation.resolve(raw,bootstrap,created,System.currentTimeMillis(),alive,File(dir,"handoff.json").takeIf{it.isFile}?.let{runCatching{readJson(it)}.getOrNull()},config.optLong("launch_timeout_seconds",20)*1000).put("session",dir.name)
     }
     fun active(): Boolean {
         val status=sessionStatus()?:return false
-        if(status.optString("phase")=="saved")return false
+        if(status.optString("phase") in listOf("saved","cancelled"))return false
         val pid=status.optInt("pid")
-        if(pid>0) return try {android.system.Os.kill(pid,0);true} catch(e:Exception){false}
-        return status.optString("phase") in listOf("loading","running","saving")
+        if(pid>0) return status.opt("process_alive")!=false
+        return status.optString("phase") in listOf("loading","running","saving","waiting_user")||status.optBoolean("recent_evidence")
     }
     fun requestStop() { val config=session()?:return; val dir=File(config.getString("session"));require(dir.canonicalPath.startsWith(File(root,"logs").canonicalPath+"/"));atomic(File(dir,"save-exit.request"),byteArrayOf(1)) }
     fun backup(project: WorkProject,world: WorkWorld): File {
