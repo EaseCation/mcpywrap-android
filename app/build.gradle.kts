@@ -6,6 +6,16 @@ android {
         minSdk = 30; targetSdk = 36; versionCode = 6; versionName = "0.5.1"; ndk { abiFilters += "arm64-v8a" }
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
+    signingConfigs {
+        getByName("debug") {
+            providers.environmentVariable("MCPY_CI_DEBUG_KEYSTORE").orNull?.let { configured ->
+                storeFile = file(configured)
+                storePassword = "android"
+                keyAlias = "androiddebugkey"
+                keyPassword = "android"
+            }
+        }
+    }
     compileOptions { isCoreLibraryDesugaringEnabled = true; sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     buildFeatures { compose = true }
     sourceSets["main"].assets.srcDir(layout.buildDirectory.dir("generated/pluginAssets"))

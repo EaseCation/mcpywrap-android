@@ -26,7 +26,7 @@ Nightly 保留同一预发布和下载文件名，标签指向对应源码提交
 
 主分支发布必须配置 Actions Secret `ANDROID_DEBUG_KEYSTORE_BASE64`，内容为固定 Debug keystore 的 Base64 编码，别名 `androiddebugkey`，store/key 密码均为 `android`。如果需要覆盖本机安装包，应使用与原 APK 相同的 Debug keystore。不要使用正式发行密钥。
 
-缺少该 Secret 时主分支构建会明确失败，不发布随机签名的 Nightly。PR 构建始终使用临时密钥，其他分支在未配置 Secret 时也可使用临时密钥。
+CI 将密钥还原到临时目录，通过显式签名配置使用，并在打包后核对 APK 的实际证书；证书不匹配时拒绝发布。缺少该 Secret 时主分支构建会明确失败，不发布随机签名的 Nightly。PR 构建始终使用临时密钥，其他分支在未配置 Secret 时也可使用临时密钥。
 
 ## 安装要求
 

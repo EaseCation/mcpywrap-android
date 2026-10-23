@@ -85,12 +85,14 @@ jobs:
           import base64
           import os
           from pathlib import Path
-          target = Path.home() / '.android' / 'debug.keystore'
+          target = Path(os.environ['RUNNER_TEMP']) / 'mcpy-nightly.keystore'
           target.parent.mkdir(parents=True, exist_ok=True)
           encoded = ''.join(os.environ['MCPY_DEBUG_KEYSTORE_BASE64'].split())
           target.write_bytes(base64.b64decode(encoded, validate=True))
+          with open(os.environ['GITHUB_ENV'], 'a') as output:
+              output.write('MCPY_CI_DEBUG_KEYSTORE=' + str(target) + '\n')
           PY
-            keytool -list -keystore "$HOME/.android/debug.keystore" \
+            keytool -list -keystore "$RUNNER_TEMP/mcpy-nightly.keystore" \
               -storepass android -alias androiddebugkey > /dev/null
           elif [[ "$GITHUB_REF" == "refs/heads/$MCPY_DEFAULT_BRANCH" ]]; then
             echo "Nightly publication requires ANDROID_DEBUG_KEYSTORE_BASE64; refusing to rotate signatures." >&2
@@ -127,6 +129,7 @@ jobs:
           mkdir -p artifacts/ci
           python tools/check-template.py
           python tools/check-artifact.py > artifacts/ci/apk-check.json
+          python tools/check-signature.py > artifacts/ci/apk-signature.json
 
       - name: Prepare downloadable APK
         id: package
@@ -187,7 +190,9 @@ jobs:
 
       - name: Remove runner signing key
         if: always()
-        run: rm -f "$HOME/.android/debug.keystore"
+        run: |
+          if [[ -n "${MCPY_CI_DEBUG_KEYSTORE:-}" ]]; then rm -f "$MCPY_CI_DEBUG_KEYSTORE"; fi
+          rm -f "$HOME/.android/debug.keystore"
 
   nightly:
     name: Update fixed nightly release
