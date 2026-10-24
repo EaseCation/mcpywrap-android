@@ -240,13 +240,22 @@ class HostController private constructor(val app:Application) {
         fun quote(value:String)="'"+value.replace("'", "'\"'\"'")+"'"
         return "mcpy host pair --url $endpoint --code $code --workspace ${quote(workspace)} --label ${quote(kind)}"
     }
-    private val documentationSetup="可选准备独立的 ModSDK 文档工具：https://github.com/MCNeteaseDevs/modsdk_mcp_server.git 。按官方说明检查当前客户端是否支持 MCP；支持时配置 MCP，不支持时可调用仓库的 docs_reader 离线查询，并只在你的工具环境里添加轻量调用入口。优先按需获取文档、结构化索引与必要代码，避免默认下载教程图片和完整历史。记录来源版本，并用带客户端/服务端信息的 API 查询验证安装。该工具不是 mcpy 依赖，不加入工程或游戏包；下载失败不阻塞 mcpy 配对。"
+    private fun documentationSetup(kind:String):String {
+        val destination=if(kind=="Minis")"/var/minis/skills/netease-modsdk-skill"else "当前 Agent 实际会发现的技能目录下的 netease-modsdk-skill；先查明目录，不照搬 Minis 路径"
+        return """安装独立的 ModSDK 开发知识 skill：https://github.com/EaseCation/netease-modsdk-skill 。目标位置：$destination。
+先检查已有同名安装及来源，可用则复用，不覆盖用户修改。未安装时用 git clone --depth=1 https://github.com/EaseCation/netease-modsdk-skill.git <技能目录> 获取完整仓库，保留 SKILL.md、README.md、agents、references、scripts 等配套文件，不能只复制入口文档。技能和查询资料放在开发工具的私有环境，不放进作品目录或游戏包。
+阅读该仓库 README.md 和 SKILL.md，使用 Python 3.9+。首次安装执行 python3 <技能目录>/scripts/setup.py，按官方流程获取精简 Wiki；已有安装先执行 python3 <技能目录>/scripts/session.py，按返回结果补齐资料或更新受管副本，不重复全量下载。执行 python3 <技能目录>/scripts/setup.py --check，并用 python3 <技能目录>/scripts/query.py detail SetAttrValue --side server --examples 0 验证真实查询。确认当前 Agent 已发现此技能；需要刷新技能或新会话时明确告诉我，不能把克隆成功当成发现成功。
+编写模组前按此 skill 选择相关开发指引，按需核验目标游戏版本、API、端侧及限制；工程管理、构建和游戏操作仍使用 mcpywrap 标准 skill。无需另外安装文档 MCP，也不要将资料工具加入 mcpy 或模组依赖。网络失败停止本轮重试：已有可用快照则注明版本继续，无快照则告诉我如何恢复网络；不阻塞 mcpy 配对，但未完成查询时不要声称 API 已核验。""".trimIndent()
+    }
+    fun developmentPrompt(kind:String):String = """请使用 mcpywrap 标准 skill 在当前开发环境中选择或新建作品。
+${documentationSetup(kind)}
+先检查 mcpy host status 的宿主能力和 launch_preconditions；出现 needs_user_action 或 host_unavailable 时立即停止自动尝试，转述 user_message 并等待我明确确认，再查询原任务；不要自行反复唤起。切换应用后断连时，请我在开发连接页打开省电设置，小米选择「无限制」；工程由 App 内核心执行，游戏通过画中画显示。用真实双端日志和截图验证源码修改；pip 字段表示画中画，不表示 Python 环境就绪。""".trimIndent()
     fun setupPrompt(kind:String):String {
         val destination=if(kind=="Minis")"/var/minis/skills/mcpywrap"else "当前 Agent 的标准技能目录"
         return """请帮我准备手机上的 mcpy 开发工具环境，暂时不配对。
 使用官方 https://github.com/EaseCation/mcpywrap 的 mcpywrap，按标准 pip/uv 安装 Python CLI，并用 mcpy skill install 安装完整 skill 到 $destination。
 Python、虚拟环境和 Git 放在本应用私有 Linux 环境。作品使用内部存储的 mcpy 文件夹，Minis 通常挂载到 /var/minis/mounts/mcpy；检查真实读写权限，不创建同名私有副本。
-$documentationSetup
+${documentationSetup(kind)}
 模型账号、目录挂载或系统权限需要我操作时，每次给我一个明确步骤。准备完成后，让我回到 mcpy 的开发工具页点击「工具已准备好，连接手机」，取得连接提示词。不要自行猜测配对码或读取凭据。""".trimIndent()
     }
     fun bootstrapPrompt(kind:String):String {
@@ -254,7 +263,7 @@ $documentationSetup
         val skills=if(kind=="Minis")"将完整 mcpywrap skill 安装到 /var/minis/skills/mcpywrap，并确认应用发现技能。"else "将完整 mcpywrap skill 安装到你的 Agent 技能目录。"
         return """请帮我配置这台手机的 mcpy 模组开发环境。
 使用官方 https://github.com/EaseCation/mcpywrap 提供的 mcpywrap CLI（准备辅助版本与 App 核心 $coreVersion 对齐）与完整 skill，不创建替代构建器。$skills
-$documentationSetup
+${documentationSetup(kind)}
 在当前 Linux 环境准备 Python、pip/uv 和 Git。工具和虚拟环境放在此应用私有环境中；项目必须使用手机内部存储的 mcpy 文件夹。
 先确认共享目录可读写；Minis 通常挂载为 /var/minis/mounts/mcpy。目录权限或模型登录需要我操作时，给我一个明确步骤。
 使用 mcpy host pair --url $endpoint --code $code --workspace <实际挂载路径> --label "$kind" 配对。等待我点击 mcpy 确认卡或通知中的「允许连接」，无需要求我来回切换 App；没有提示时再引导打开开发工具页。

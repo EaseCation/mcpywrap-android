@@ -226,7 +226,7 @@ fun DevelopmentToolsScreen(){
                 val workflow="mcpy --project <作品目录> build --json\nmcpy --project <作品目录> run --no-gui --detach --json"
                 CommandBlock(workflow){copy(workflow)}
                 Text("将 <作品目录> 换成开发环境中的实际路径。运行后，使用返回的 session 查询日志、热更或保存退出。",style=MaterialTheme.typography.bodySmall)
-                TextButton(onClick={copy("请使用 mcpywrap 标准 skill 在当前开发环境中选择或新建作品。先检查 mcpy host status 的宿主能力和 launch_preconditions；出现 needs_user_action 或 host_unavailable 时立即停止自动尝试，转述 user_message 并等待我明确确认，再查询原任务；不要自行反复唤起。切换应用后断连时，请我在开发连接页打开省电设置，小米选择「无限制」；工程由 App 内核心执行，游戏通过画中画显示。用真实双端日志和截图验证源码修改；pip 字段表示画中画，不表示 Python 环境就绪。","开发说明已复制")}){Text("复制给 AI 的开发说明")}
+                TextButton(onClick={copy(host.developmentPrompt(kind),"开发说明已复制")}){Text("复制给 AI 的开发说明")}
                 Text("${host.endpoint} · 核心 ${host.coreVersion.ifEmpty{"尚未读取"}}",style=MaterialTheme.typography.bodySmall)
                 Text("目录权限修复或网络恢复后，重试同一条配对命令即可继续。只有请求过期才需要新配对码。",style=MaterialTheme.typography.bodyMedium)
                 TextButton(onClick={copy("mcpy 本机连接：服务 ${if(host.online)"已开启"else"已暂停"}，地址 ${host.endpoint}，核心 ${host.coreVersion}，临时提示 $overlay，通知 $notifications。检查目录挂载、mcpy host status 与协议能力。重试可恢复的原配对请求；不要输出私有令牌，不回退本地构建。","已复制排错信息，不含连接凭据")}){Text("复制排错信息")}
