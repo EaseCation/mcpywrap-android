@@ -133,8 +133,8 @@ class ApplicationOperations private constructor(private val app:Application) {
         history("requested")
         receipt("launch_requested")
         try{withContext(Dispatchers.Main){
-            val directPip=external&&smallWindow
-            require(!directPip||android.os.Build.VERSION.SDK_INT>=33){"此系统不支持直接启动游戏画中画，请在 App 内启动"}
+            val directPip=smallWindow
+            require(!directPip||android.os.Build.VERSION.SDK_INT>=33){"此系统不支持直接启动游戏画中画，请关闭默认小窗运行"}
             val target=if(directPip)"net.easecation.mcpywrap.GamePipLauncherActivity"else "com.mojang.minecraftpe.MainActivity"
             val intent=Intent().setClassName(app,target)
                 .putExtra("data",launch.getString("data")).putExtra("session",directory.path).putExtra("smallWindow",smallWindow)
@@ -161,7 +161,7 @@ class ApplicationOperations private constructor(private val app:Application) {
                 pendingLaunches.transition(directory.name,"failed")
                 throw ApplicationFailure(observed.optString("code").ifBlank{"game_start_failed"},observed.optString("error","游戏启动失败"),details=observed)
             }
-            if(status!=null&&status.optInt("pid",0)>0&&(!external||!smallWindow||status.optBoolean("pip")))break
+            if(status!=null&&status.optInt("pid",0)>0&&(!smallWindow||status.optBoolean("pip")))break
             delay(100)
         }}}
         catch(error:TimeoutCancellationException){

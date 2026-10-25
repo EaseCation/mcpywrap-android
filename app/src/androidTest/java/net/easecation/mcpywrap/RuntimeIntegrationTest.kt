@@ -62,14 +62,25 @@ class RuntimeIntegrationTest {
         val base=repo.open(project.folder,WelcomeTemplate.CLIENT_PATH)
         fun source(marker:String)=base.text.replace("欢迎来到我的世界！",marker).replace("        game.SetTipMessage", "        import CoreShared\n        assert CoreShared.VALUE == 'CORE_DEPENDENCY'\n        open('/sdcard/mcpy/logs/product-evidence/source-execution.json', 'w').write('{\"marker\":\"$marker\",\"dependency\":\"CORE_DEPENDENCY\",\"event\":\"OnLocalPlayerStopLoading\"}')\n        game.SetTipMessage")
         var original=base
+        val priorSmallWindow=app.getSharedPreferences("settings",0).getBoolean("pip",true)
+        try {
         for(marker in listOf("PHONE_SOURCE_A","PHONE_SOURCE_B")){
             proof.delete();original=repo.save(project.folder,original,source(marker))
             val vm=compose.activityRule.scenario.let{var value:StudioViewModel?=null;it.onActivity{a->value=ViewModelProvider(a)[StudioViewModel::class.java]};value!!}
             compose.runOnUiThread{vm.refresh()}
             waitFor(30,"view model ready"){!vm.state.value.busy && vm.state.value.runtimeReady}
             waitFor(30,"previous session released"){!repo.active()}
-            compose.runOnUiThread{vm.run(project,world)}
-            waitFor(30,"launch request accepted"){!vm.state.value.busy}
+            compose.runOnUiThread{vm.setSmallWindow(true);vm.run(project,world)}
+            waitFor(60,"loading is presented directly in PiP"){
+                repo.session()?.optString("projectId")==project.id&&repo.sessionStatus()?.let{it.optString("phase")=="loading"&&it.optBoolean("pip")&&it.optString("launchMode")=="direct_pip"&&it.optInt("viewWidth")>0&&it.optInt("bufferWidth")>0&&it.optInt("viewHeight")<it.optInt("bufferHeight")}==true
+            }
+            val loading=repo.sessionStatus()!!
+            assertTrue(loading.getString("loadingStage").isNotBlank())
+            assertFalse(repo.session()!!.getBoolean("launch_external"))
+            assertTrue(loading.getInt("viewWidth")<loading.getInt("bufferWidth"))
+            File(evidence,"${marker.lowercase()}-initial-pip.json").writeText(loading.toString(2))
+            screenshot("${marker.lowercase()}-initial-pip")
+            waitFor(60,"launch request accepted"){!vm.state.value.busy}
             check(vm.state.value.error==null){"Launch failed: ${vm.state.value.error}"}
             waitFor(240,"source event $marker"){proof.isFile&&runCatching{JSONObject(proof.readText()).getString("marker")==marker}.getOrDefault(false)}
             waitFor(30,"running"){repo.sessionStatus()?.optString("phase")=="running"}
@@ -154,6 +165,12 @@ class RuntimeIntegrationTest {
             }
             repo.requestStop();waitFor(90,"save exit"){repo.sessionStatus()?.optString("phase")=="saved"};Thread.sleep(1500)
             assertTrue(File(repo.worldDir(world.folder),"minecraftWorlds/local-world/level.dat").isFile)
+        }
+        } finally {
+            app.getSharedPreferences("settings",0).edit().putBoolean("pip",priorSmallWindow).apply()
+            if(repo.session()?.optString("projectId")==project.id&&repo.active()){
+                repo.requestStop();waitFor(90,"save owned test session"){!repo.active()}
+            }
         }
         File(evidence,"integration.json").writeText(JSONObject().put("project",project.folder).put("world",world.folder).put("sameWorld",true).put("sourceA",true).put("sourceB",true).put("coreDependencyExecuted",true).put("saved",true).toString(2))
     }

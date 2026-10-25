@@ -32,6 +32,9 @@ class GamePipLauncherActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        // Expanding then minimizing the game exposes this transparent source again.
+        // Yield on every resume, not just the initial launch, so it cannot cover the caller.
+        callerRestored = false
         if (observing) return
         val session = intent.getStringExtra("session") ?: run { finish(); return }
         fun validAttempt():Boolean=runCatching{

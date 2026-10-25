@@ -32,7 +32,7 @@ class LaunchDiagnostics(private val app:Application,private val repository:Works
         check("unlocked",!app.getSystemService(KeyguardManager::class.java).isKeyguardLocked,"device_locked","解锁手机后重试")
         if(external)check("overlay",Settings.canDrawOverlays(app),"overlay_permission_required","系统当前不允许临时悬浮提示；先收起安全键盘或切回 mcpy，持续受限时检查显示在其他应用上层权限",Settings.ACTION_MANAGE_OVERLAY_PERMISSION)
         if(pip){
-            check("pip_supported",app.packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)&&(!external||android.os.Build.VERSION.SDK_INT>=33),"pip_unsupported","当前系统不支持所请求的游戏画中画启动方式")
+            check("pip_supported",app.packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)&&android.os.Build.VERSION.SDK_INT>=33,"pip_unsupported","当前系统不支持直接小窗启动，请关闭默认小窗运行后测试")
             val mode=runCatching{app.getSystemService(AppOpsManager::class.java).unsafeCheckOpNoThrow(AppOpsManager.OPSTR_PICTURE_IN_PICTURE,app.applicationInfo.uid,app.packageName)}.getOrNull()
             check("pip_permission",mode !in listOf(AppOpsManager.MODE_IGNORED,AppOpsManager.MODE_ERRORED),"pip_permission_missing","在系统特殊应用权限中允许 mcpy 使用画中画","android.settings.PICTURE_IN_PICTURE_SETTINGS")
             if(mode==null||mode==AppOpsManager.MODE_DEFAULT)checks.getJSONObject("pip_permission").put("state","unknown")
