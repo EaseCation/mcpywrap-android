@@ -1,4 +1,4 @@
-package dev.mcpywrap.android
+package net.easecation.mcpywrap
 
 import android.app.Application
 import android.graphics.Bitmap
@@ -26,7 +26,7 @@ class ProductFlowTest {
     private fun tap(text:String){ready(text);compose.waitUntil(30000){compose.onAllNodesWithTag("operation-progress").fetchSemanticsNodes().isEmpty()};compose.onAllNodesWithText(text).onLast().performClick()}
     private fun create():String {
         val name="QA-${System.nanoTime()}"
-        tap("欢迎语示例");compose.onNodeWithText("我的欢迎语").performTextReplacement(name);tap("确定");ready("behavior_pack");compose.waitUntil(30000){compose.onAllNodesWithTag("operation-progress").fetchSemanticsNodes().isEmpty()};return name
+        tap("新建作品");tap("欢迎语示例");compose.onNodeWithText("我的欢迎语").performTextReplacement(name);tap("确定");ready("behavior_pack");compose.waitUntil(30000){compose.onAllNodesWithTag("operation-progress").fetchSemanticsNodes().isEmpty()};return name
     }
     private fun editor(){tap("behavior_pack");tap("WelcomeDemo");tap("client.py");compose.waitUntil(15000){compose.onAllNodesWithTag("source-editor").fetchSemanticsNodes().isNotEmpty()}}
     private fun screenshot(name:String){val dir=File("/sdcard/mcpy/logs/product-evidence").apply{mkdirs()};InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot().let{bitmap->File(dir,"$name.png").outputStream().use{bitmap.compress(Bitmap.CompressFormat.PNG,100,it)}}}

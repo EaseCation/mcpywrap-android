@@ -47,6 +47,44 @@ class ApplicationOperations private constructor(private val app:Application) {
         require(record.getString("projectId")==project.id){"会话不属于当前作品"}
         return record
     }
+    fun resolveCurrentSessionProject(record:JSONObject):WorkProject = repository.projects().firstOrNull{it.id==record.optString("projectId")}
+        ?: throw ApplicationFailure("project_unavailable","当前测试所属的作品已不存在，请先从回收站恢复作品")
+    fun resolveCurrentSessionInstance(record:JSONObject,project:WorkProject):WorkWorld = repository.worlds(project).firstOrNull{it.id==record.optString("instanceId")&&it.projectId==project.id}
+        ?: throw ApplicationFailure("instance_unavailable","当前测试实例已不可用，请返回作品选择或恢复实例")
+
+    /** Caller holds mutate(): recheck the exact active session after waiting for other operations. */
+    suspend fun restartCurrentSession(expectedSession:String,smallWindow:Boolean=true,progress:(String)->Unit={},
+        prepare:(suspend(String)->String)?=null,external:Boolean=false,owner:JSONObject?=null,launchTimeout:Int=45):JSONObject {
+        val record=repository.session()?:throw ApplicationFailure("session_unavailable","还没有测试记录")
+        val id=File(record.getString("session")).name
+        require(id==File(expectedSession).name){"当前测试已被其他操作更新，请查看新的运行卡片"}
+        val project=resolveCurrentSessionProject(record)
+        val world=resolveCurrentSessionInstance(record,project)
+        val observed=repository.sessionStatus(record)!!
+        require(observed.optString("phase")!="saving"){"游戏正在保存，请保存完成后再重新测试"}
+        // Invalidate a delayed Activity request before cancelling its prepared session.
+        pendingLaunch()?.let{pending->
+            require(pending.getString("session")==id){"另一个启动请求正在处理，请先查看它的状态"}
+            pendingLaunches.transition(id,"cancelled","user_restart","用户已在 App 重新测试")
+            val latest=repository.sessionStatus(record)!!
+            if(latest.optInt("pid")<=0||latest.opt("process_alive")==false){
+                WorkspaceRepository.atomic(File(WorkspaceRepository.inside(File(repository.root,"logs"),id),"status.json"),JSONObject().put("phase","cancelled").put("code","launch_cancelled").put("error","已重新测试，原启动已取消").toString().toByteArray())
+            }else{
+                progress("正在保存上一次游戏")
+                val stopped=stopCurrent()
+                check(stopped.optString("state")=="saved"){"没有确认保存成功，已停止重新测试"}
+                delay(500)
+            }
+        }
+        return start(project,world,replace=true,smallWindow=smallWindow,progress=progress,prepare=prepare,
+            external=external,owner=owner,launchTimeout=launchTimeout,previousSession=id)
+    }
+    private suspend fun awaitGameExit(record:JSONObject){
+        val observed=repository.sessionStatus(record)?:return
+        if(observed.optInt("pid")<=0||observed.opt("process_alive")==false)return
+        try{withTimeout(15_000){while(repository.sessionStatus(record)?.opt("process_alive")!=false)delay(100)}}
+        catch(e:TimeoutCancellationException){throw ApplicationFailure("game_exit_pending","游戏仍在退出，请稍后重新测试；原实例保持不变")}
+    }
     suspend fun start(project:WorkProject,world:WorkWorld?=null,replace:Boolean=false,smallWindow:Boolean=true,
                       progress:(String)->Unit={},prepare:(suspend(String)->String)?=null,external:Boolean=false,owner:JSONObject?=null,launchTimeout:Int=45,previousSession:String?=null):JSONObject {
         require(launchTimeout in 5..120){"启动确认等待需为 5..120 秒"}
@@ -55,15 +93,18 @@ class ApplicationOperations private constructor(private val app:Application) {
         if(repository.active()){
             require(replace){"游戏正在运行，请先保存退出"}
             session(project)
+            progress("正在保存上一次游戏")
             repository.requestStop()
             withTimeout(90_000){while(repository.active())delay(250)}
             check(repository.sessionStatus()?.optString("phase")=="saved"){"未确认保存成功"}
-            delay(500)
+            repository.session()?.let{awaitGameExit(it)}
+        }else{
+            repository.session()?.takeIf{repository.sessionStatus(it)?.optString("phase")=="saved"}?.let{awaitGameExit(it)}
         }
-        progress("解析依赖并组装作品")
+        progress(if(previousSession!=null)"正在重新构建作品"else "解析依赖并组装作品")
         val built=core("command",project.folder,
             JSONObject().put("operation","prepare_run").put("parameters",JSONObject()),progress,prepare)
-        progress("正在部署到测试实例")
+        progress(if(previousSession!=null)"正在启动同一个测试实例"else "正在部署到测试实例")
         val plan=repository.prepareRun(project,world?:repository.defaultWorld(project),File(built.getString("output")))
         val sources=built.getJSONObject("source_packs")
         val launch=JSONObject(File(plan.session,"launch.json").readText()).put("source_packs",sources).put("configuration_digest",configurationDigest(project,sources)).put("launch_external",external).put("small_window",smallWindow).put("launch_timeout_seconds",launchTimeout)
@@ -94,7 +135,7 @@ class ApplicationOperations private constructor(private val app:Application) {
         try{withContext(Dispatchers.Main){
             val directPip=external&&smallWindow
             require(!directPip||android.os.Build.VERSION.SDK_INT>=33){"此系统不支持直接启动游戏画中画，请在 App 内启动"}
-            val target=if(directPip)"dev.mcpywrap.android.GamePipLauncherActivity"else "com.mojang.minecraftpe.MainActivity"
+            val target=if(directPip)"net.easecation.mcpywrap.GamePipLauncherActivity"else "com.mojang.minecraftpe.MainActivity"
             val intent=Intent().setClassName(app,target)
                 .putExtra("data",launch.getString("data")).putExtra("session",directory.path).putExtra("smallWindow",smallWindow)
                 .putExtra("title","mcpy · ${launch.getString("project")}")
@@ -209,10 +250,16 @@ class ApplicationOperations private constructor(private val app:Application) {
         val pending=pendingLaunch()?.takeIf{it.getString("session")==id}
         if(pending!=null&&((repository.sessionStatus(record)?.optInt("pid",0)?:0)==0||repository.sessionStatus(record)?.opt("process_alive")==false)){
             pendingLaunches.transition(id,"cancelled")
+            // A prepared handoff has no process that can acknowledge save-exit. Mark
+            // the session terminal so an explicit in-app retry can reuse its instance
+            // without waiting forever on repository.active().
+            WorkspaceRepository.atomic(File(WorkspaceRepository.inside(File(repository.root,"logs"),id),"status.json"),JSONObject()
+                .put("phase","cancelled").put("code","launch_cancelled").put("error","启动已由用户取消").toString().toByteArray())
             return JSONObject().put("state","cancelled").put("session",id).put("saved",false)
         }
         repository.requestStop()
         withTimeout(90_000){while(repository.active())delay(250)}
+        if(repository.sessionStatus(record)?.optString("phase")=="saved")awaitGameExit(record)
         if(pending!=null)pendingLaunches.transition(id,"finished")
         return JSONObject().put("state",repository.sessionStatus()?.optString("phase"))
     }
@@ -356,7 +403,7 @@ class ApplicationOperations private constructor(private val app:Application) {
                     start(project,world,smallWindow=params.isNull("background")||params.optBoolean("background"),progress=progress,prepare=prepare,external=true,owner=owner,launchTimeout=params.optInt("launch_timeout",45))
                 }
             }
-            "restart"->{val current=session(project,id);val world=repository.worlds(project).single{it.id==current.getString("instanceId")};start(project,world,replace=true,progress=progress,prepare=prepare,external=true,owner=owner,launchTimeout=params.optInt("launch_timeout",45),previousSession=File(current.getString("session")).name)}
+            "restart"->{val current=session(project,id);restartCurrentSession(current.getString("session"),progress=progress,prepare=prepare,external=true,owner=owner,launchTimeout=params.optInt("launch_timeout",45))}
             "status"->{
                 val current=if(id!=null)session(project,id)else repository.session()
                 val value=if(current!=null)diagnostics.observe(current)else JSONObject().put("phase","idle")

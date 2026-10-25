@@ -1,4 +1,4 @@
-package dev.mcpywrap.android
+package net.easecation.mcpywrap
 
 import android.app.Application
 import androidx.test.platform.app.InstrumentationRegistry
@@ -48,7 +48,7 @@ class HostPendingLaunchTest {
             instrumentation.sendStatus(0,android.os.Bundle().apply{putString("stream","\nPrepared session retained; opening App to exercise onPostResume\n")})
             // Shell represents the user's explicit return, not an application permission bypass.
             android.os.ParcelFileDescriptor.AutoCloseInputStream(instrumentation.uiAutomation.executeShellCommand(
-                "am start -a android.intent.action.VIEW -d mcpy://service/start dev.mcpywrap.android"
+                "am start -a android.intent.action.VIEW -d mcpy://service/start net.easecation.mcpywrap"
             )).use{it.readBytes()}
             withTimeout(180_000){while(repository.sessionStatus()?.let{it.optString("phase")=="running"&&it.optBoolean("pip")&&it.optBoolean("serverReady")}!=true)delay(250)}
             val running=repository.sessionStatus()!!
@@ -57,7 +57,7 @@ class HostPendingLaunchTest {
             assertEquals(before,digest())
             assertEquals(worlds,repository.worlds(project).map{it.id}.sorted())
             assertTrue(running.getInt("pid")>0)
-            assertEquals(1920,running.getInt("bufferWidth"));assertEquals(1080,running.getInt("bufferHeight"))
+            assertEquals(running.getInt("renderWidth"),running.getInt("bufferWidth"));assertEquals(running.getInt("renderHeight"),running.getInt("bufferHeight"))
             proof.put("running",running).put("launch_sha256_after",digest()).put("same_worlds",true).put("verified",true)
             evidence.writeText(proof.toString(2))
         } finally {

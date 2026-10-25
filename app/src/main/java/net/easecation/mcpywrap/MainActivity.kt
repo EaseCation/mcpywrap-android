@@ -1,4 +1,4 @@
-package dev.mcpywrap.android
+package net.easecation.mcpywrap
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -13,19 +13,19 @@ import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
-    private var resumeConnection=false
     private fun handleConnectionIntent(intent:android.content.Intent){
         val uri=intent.data
         val recovery=intent.action==android.content.Intent.ACTION_VIEW&&uri?.scheme=="mcpy"&&uri.host=="service"&&uri.path=="/start"
         if(recovery||intent.action==dev.mcpywrap.bridge.HostService.OPEN){
             androidx.lifecycle.ViewModelProvider(this)[dev.mcpywrap.studio.StudioViewModel::class.java].tab(1)
-            resumeConnection=recovery
         }
     }
     override fun onNewIntent(intent:android.content.Intent){super.onNewIntent(intent);setIntent(intent);handleConnectionIntent(intent)}
     override fun onPostResume(){
         super.onPostResume()
-        if(resumeConnection){resumeConnection=false;if(dev.mcpywrap.bridge.HostService.canResume(application))dev.mcpywrap.bridge.HostService.start(application)}
+        val host=dev.mcpywrap.bridge.HostController.get(application)
+        if(android.os.Environment.isExternalStorageManager() && dev.mcpywrap.bridge.HostService.canResume(application) && !host.online && !host.starting)
+            dev.mcpywrap.bridge.HostService.start(application)
         lifecycleScope.launch{dev.mcpywrap.bridge.HostController.get(application).resumeFromForeground()}
     }
     override fun onStart(){super.onStart();dev.mcpywrap.bridge.HostController.get(application).foreground=true}

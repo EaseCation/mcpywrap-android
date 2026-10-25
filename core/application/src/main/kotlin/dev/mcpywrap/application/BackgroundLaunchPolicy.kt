@@ -18,7 +18,11 @@ class BackgroundLaunchPolicy(private val app:Application){
         }.getOrNull()else null
         val state=when(mode){AppOpsManager.MODE_ALLOWED->"ok";AppOpsManager.MODE_IGNORED,AppOpsManager.MODE_ERRORED->"missing";else->"unknown"}
         return JSONObject().put("state",state).put("vendor",if(xiaomi)"xiaomi"else Build.MANUFACTURER)
-            .put("hint",if(xiaomi)"在 mcpy 的权限管理 → 其他权限中允许「后台弹出界面」；也可切回 mcpy 继续本次启动"else "系统可能限制后台打开界面；切回 mcpy 即可继续本次启动")
+            .put("hint",when(state){
+                "ok"->"可直接运行游戏，无需先打开 mcpy。"
+                "missing"->if(xiaomi)"请用户在权限管理 → 其他权限中允许「后台弹出界面」，或手动切回 mcpy 继续已准备的启动。"else "请用户手动切回 mcpy 继续已准备的启动。"
+                else->"当前后台权限无法预判；没有其他阻塞项时直接提交 run。仅在本次返回需要用户操作时，再请用户手动恢复，不要预先唤起 App。"
+            })
             .put("settings_action",if(xiaomi)"miui.intent.action.APP_PERM_EDITOR"else Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
             .put("settings_package",app.packageName).put("recovery_uri","mcpy://service/start")
             .put("evidence",if(mode==null)"not_queryable"else "self_appop_10021")

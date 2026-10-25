@@ -32,9 +32,7 @@ public class MainActivity extends com.google.androidgamesdk.GameActivity {
  private android.widget.ProgressBar loadingProgress;
  private android.view.SurfaceView gameSurface;
  private int fullRenderWidth,fullRenderHeight;
- private boolean fixedViewport;
- private long viewportHandle;
- private android.content.res.Configuration renderConfiguration,latestConfiguration;
+ private android.content.res.Configuration renderConfiguration;
  private long started=System.currentTimeMillis();
  private final android.os.Handler statusHandler=new android.os.Handler(android.os.Looper.getMainLooper());
  private final Runnable heartbeat=new Runnable(){public void run(){maybeEnterSmallWindow();pollCapture();writeStatus();updateLoadingPanel();statusHandler.postDelayed(this,2000);}};
@@ -52,7 +50,7 @@ public class MainActivity extends com.google.androidgamesdk.GameActivity {
  private void updateLoadingPanel(){
   if(loadingPanel==null)return;
   String label=loadingStage();loadingPanel.setVisibility(label.isEmpty()?android.view.View.GONE:android.view.View.VISIBLE);
-  boolean compact=isInPictureInPictureMode()||directPip;
+  boolean compact=isInPictureInPictureMode()||(directPip&&!pipShown);
   loadingText.setTextSize(compact?11:16);
   loadingPanel.setGravity(compact?android.view.Gravity.CENTER:android.view.Gravity.START);
   android.widget.FrameLayout.LayoutParams layout=(android.widget.FrameLayout.LayoutParams)loadingPanel.getLayoutParams();
@@ -113,40 +111,27 @@ public class MainActivity extends com.google.androidgamesdk.GameActivity {
   if(!getPackageManager().hasSystemFeature(android.content.pm.PackageManager.FEATURE_PICTURE_IN_PICTURE))return;
   try{
    gameSurface=findGameSurface(getWindow().getDecorView());
-   if(gameSurface!=null&&gameSurface.getWidth()>0&&gameSurface.getHeight()>0){
-    fullRenderWidth=gameSurface.getWidth();fullRenderHeight=gameSurface.getHeight();
-    // Keep the complete engine framebuffer. SurfaceView scales this fixed buffer to PiP bounds.
-    renderConfiguration=new android.content.res.Configuration(getResources().getConfiguration());
-    fixedViewport=true;
-    gameSurface.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or_,ob)->restoreViewportIfFullscreen());
-    gameSurface.getHolder().setFixedSize(fullRenderWidth,fullRenderHeight);
-   }
+   keepRenderBuffer();
    pipRequested=true;if(!enterPictureInPictureMode(new android.app.PictureInPictureParams.Builder().setAspectRatio(pipAspectRatio()).build()))pipRequested=false;}catch(Exception e){pipRequested=false;log("PiP: "+e.getMessage());}
  }
- @Override public void onPictureInPictureModeChanged(boolean inPip,android.content.res.Configuration config){super.onPictureInPictureModeChanged(inPip,config);pipRequested=inPip;if(inPip){pipShown=true;android.view.WindowManager.LayoutParams window=getWindow().getAttributes();window.alpha=1f;getWindow().setAttributes(window);}else if(pipShown)setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);updateLoadingPanel();if(editButton!=null){editButton.setVisibility(inPip?android.view.View.GONE:android.view.View.VISIBLE);if(!inPip)editButton.post(editButton::restorePosition);}if(!inPip&&gameSurface!=null)gameSurface.post(this::restoreViewportIfFullscreen);writeStatus();}
- private void restoreViewportIfFullscreen(){
-  if(!fixedViewport||pipRequested||isInPictureInPictureMode()||gameSurface==null)return;
-  if(gameSurface.getWidth()<=0||gameSurface.getHeight()<=0)return;
-  if(!directPip&&(gameSurface.getWidth()!=fullRenderWidth||gameSurface.getHeight()!=fullRenderHeight))return;
-  if(directPip){fullRenderWidth=gameSurface.getWidth();fullRenderHeight=gameSurface.getHeight();directPip=false;}
-  fixedViewport=false;gameSurface.getHolder().setSizeFromLayout();
-  if(viewportHandle!=0&&initialized&&!phase.equals("saved")){
-   super.onContentRectChangedNative(viewportHandle,0,0,fullRenderWidth,fullRenderHeight);
-   if(latestConfiguration!=null)super.onConfigurationChangedNative(viewportHandle,latestConfiguration);
-  }
+ @Override public void onPictureInPictureModeChanged(boolean inPip,android.content.res.Configuration config){super.onPictureInPictureModeChanged(inPip,config);pipRequested=inPip;if(inPip){pipShown=true;android.view.WindowManager.LayoutParams window=getWindow().getAttributes();window.alpha=1f;getWindow().setAttributes(window);}else if(pipShown)setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);updateLoadingPanel();if(editButton!=null){editButton.setVisibility(inPip?android.view.View.GONE:android.view.View.VISIBLE);if(!inPip)editButton.post(editButton::restorePosition);}if(!inPip&&gameSurface!=null)gameSurface.post(this::keepRenderBuffer);writeStatus();}
+ private void keepRenderBuffer(){
+  if(gameSurface==null||fullRenderWidth<=0||fullRenderHeight<=0)return;
+  android.graphics.Rect frame=gameSurface.getHolder().getSurfaceFrame();
+  if(frame.width()!=fullRenderWidth||frame.height()!=fullRenderHeight)
+   gameSurface.getHolder().setFixedSize(fullRenderWidth,fullRenderHeight);
  }
  @Override protected void onContentRectChangedNative(long handle,int x,int y,int width,int height){
-  viewportHandle=handle;
-  if(fixedViewport)super.onContentRectChangedNative(handle,0,0,fullRenderWidth,fullRenderHeight);
-  else super.onContentRectChangedNative(handle,x,y,width,height);
+  // Window bounds can be portrait or PiP-sized during transitions. Never resize
+  // the engine to these transient bounds while its native Surface stays landscape.
+  super.onContentRectChangedNative(handle,0,0,fullRenderWidth,fullRenderHeight);
  }
  @Override protected void onConfigurationChangedNative(long handle,android.content.res.Configuration configuration){
-  viewportHandle=handle;latestConfiguration=new android.content.res.Configuration(configuration);
-  super.onConfigurationChangedNative(handle,fixedViewport&&renderConfiguration!=null?renderConfiguration:configuration);
+  super.onConfigurationChangedNative(handle,renderConfiguration!=null?renderConfiguration:configuration);
  }
  // The pinned GameActivity dispatches onPauseNative virtually. Android still receives onPause;
  // only the engine pause is deferred while the game remains visible in PiP.
- @Override protected void onPauseNative(long handle){if(!fixedViewport&&!pipRequested&&!isInPictureInPictureMode())super.onPauseNative(handle);}
+ @Override protected void onPauseNative(long handle){if(!pipRequested&&!isInPictureInPictureMode())super.onPauseNative(handle);}
  @Override public void onWindowFocusChanged(boolean focused){super.onWindowFocusChanged(focused||pipRequested||isInPictureInPictureMode());}
  // Some vendor systems ignore launch-into-PiP options. Enter on first resume,
  // before revealing the transparent window, without waiting for engine readiness.
@@ -199,15 +184,17 @@ public class MainActivity extends com.google.androidgamesdk.GameActivity {
    directPip=getIntent().getBooleanExtra("directPip",false);
    if(!directPip)setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
    else {android.view.WindowManager.LayoutParams window=getWindow().getAttributes();window.alpha=0f;getWindow().setAttributes(window);}
-   if(directPip){
-    // A game launched directly into PiP never gets a full-screen layout. Keep the
-    // engine's render space explicit, independently of the Android window bounds.
-    fullRenderWidth=1920;fullRenderHeight=1080;fixedViewport=true;pipRequested=true;pipShown=false;
-    renderConfiguration=new android.content.res.Configuration(getResources().getConfiguration());
-    float density=getResources().getDisplayMetrics().density;
-    renderConfiguration.orientation=android.content.res.Configuration.ORIENTATION_LANDSCAPE;
-    renderConfiguration.screenWidthDp=Math.round(fullRenderWidth/density);renderConfiguration.screenHeightDp=Math.round(fullRenderHeight/density);
-   }
+   // One landscape render space for this session, shared by fullscreen and PiP.
+   // Reading the physical display avoids sampling the caller's portrait/PiP bounds.
+   android.util.DisplayMetrics display=new android.util.DisplayMetrics();
+   getWindowManager().getDefaultDisplay().getRealMetrics(display);
+   fullRenderWidth=Math.max(display.widthPixels,display.heightPixels);
+   fullRenderHeight=Math.min(display.widthPixels,display.heightPixels);
+   renderConfiguration=new android.content.res.Configuration(getResources().getConfiguration());
+   renderConfiguration.orientation=android.content.res.Configuration.ORIENTATION_LANDSCAPE;
+   renderConfiguration.screenWidthDp=Math.round(fullRenderWidth/display.density);
+   renderConfiguration.screenHeightDp=Math.round(fullRenderHeight/display.density);
+   if(directPip){pipRequested=true;pipShown=false;}
    dev.mcpy.game.OfflineNetworkPolicy.enable();
    statusHandler.post(heartbeat);
    File installed=new File(data,"games/com.netease"); installed.mkdirs();
@@ -227,10 +214,12 @@ public class MainActivity extends com.google.androidgamesdk.GameActivity {
    orgFmodInit();
    setTheme(0x7f0f00b2);
    super.onCreate(state);
-   if(directPip){
-    gameSurface=findGameSurface(getWindow().getDecorView());
-    if(gameSurface!=null){gameSurface.getHolder().setFixedSize(fullRenderWidth,fullRenderHeight);gameSurface.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or_,ob)->restoreViewportIfFullscreen());}
+   gameSurface=findGameSurface(getWindow().getDecorView());
+   if(gameSurface!=null){
+    gameSurface.getHolder().setFixedSize(fullRenderWidth,fullRenderHeight);
+    gameSurface.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or_,ob)->keepRenderBuffer());
    }
+   if(getPackageManager().hasSystemFeature(android.content.pm.PackageManager.FEATURE_PICTURE_IN_PICTURE))setPictureInPictureParams(new android.app.PictureInPictureParams.Builder().setAspectRatio(pipAspectRatio()).build());
    getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
    android.view.WindowInsetsController insets=getWindow().getInsetsController();
    if(insets!=null){insets.hide(android.view.WindowInsets.Type.systemBars());insets.setSystemBarsBehavior(android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);}
@@ -390,8 +379,8 @@ public class MainActivity extends com.google.androidgamesdk.GameActivity {
  public String getLegacyExternalStoragePath(String path){return "";}
  public int getLogoStep(){return 3;}
  public int getAndroidVersion(){return android.os.Build.VERSION.SDK_INT;}
- public int getScreenWidth(){return fixedViewport?fullRenderWidth:getResources().getDisplayMetrics().widthPixels;}
- public int getScreenHeight(){return fixedViewport?fullRenderHeight:getResources().getDisplayMetrics().heightPixels;}
+ public int getScreenWidth(){return fullRenderWidth>0?fullRenderWidth:getResources().getDisplayMetrics().widthPixels;}
+ public int getScreenHeight(){return fullRenderHeight>0?fullRenderHeight:getResources().getDisplayMetrics().heightPixels;}
  public int getDisplayWidth(){return getScreenWidth();}
  public int getDisplayHeight(){return getScreenHeight();}
  public int getPlatformDpi(){return getResources().getDisplayMetrics().densityDpi;}
@@ -789,7 +778,7 @@ public class MainActivity extends com.google.androidgamesdk.GameActivity {
  public boolean isDemo(){unsupported("isDemo");return false;}
  public boolean isHardwareKeyboardHidden(){unsupported("isHardwareKeyboardHidden");return false;}
  public boolean isTablet(){unsupported("isTablet");return false;}
- public void onRestart(){unsupported("onRestart");}
+ @Override public void onRestart(){super.onRestart();}
  public void openFile(){unsupported("openFile");}
  public void pickImage(long a0){unsupported("pickImage");}
  public void saveFile(java.lang.String a0){unsupported("saveFile");}

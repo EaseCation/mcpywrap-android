@@ -26,7 +26,7 @@ class PairingConfirmationActivity:ComponentActivity(){
             }
             pair?.let{request->AlertDialog(onDismissRequest={finish()},
                 title={Text("允许 ${request.getString("label")} 连接？")},
-                text={Text(error?:"允许编辑 mcpy 中的作品、构建模组和调试游戏。仅允许你刚刚发起的连接，以后可在开发工具中断开。")},
+                text={Text(error?:"允许编辑 mcpy 中的作品、构建模组和调试游戏。仅允许你刚刚发起的连接，以后可在「开发」页断开。")},
                 confirmButton={Button(onClick={decide(true)}){Text("允许连接")}},
                 dismissButton={TextButton(onClick={decide(false)}){Text("拒绝")}})}
         }}

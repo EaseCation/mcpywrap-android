@@ -77,8 +77,8 @@ class LaunchDiagnostics(private val app:Application,private val repository:Works
         val receipt=File(directory,"launch-receipt.json")
         if(receipt.isFile)runCatching{val entry=JSONObject(receipt.readText());if(entry.has("observed_at"))entry.put("age_ms",(now-entry.getLong("observed_at")).coerceAtLeast(0));value.put("launch_receipt",entry)}
         value.put("hint",when(value.optString("phase")){
-            "waiting_user"->"作品已准备好，打开 mcpy://service/start 继续同一个会话，或在设置中允许后台弹出界面；不要重新 run --new。"
-            "unknown"->"先检查启动前置条件和启动记录；可打开 mcpy://service/start。不要重复 run --new；恢复后继续原实例。"
+            "waiting_user"->"作品已准备好，请用户手动打开 mcpy://service/start 继续同一个会话，或在设置中允许后台弹出界面；不要重新 run --new。"
+            "unknown"->"先检查启动前置条件和启动记录；需要恢复时请用户手动打开 mcpy://service/start，不由工具自动唤起。不要重复 run --new；恢复后继续原实例。"
             "unresponsive"->"进程状态未更新，检查引擎日志与退出记录；不要重放已发送的代码或启动操作。"
             "failed","interrupted"->"修复已报告原因后，使用原实例 ID 重新运行，不需要新建世界。"
             else->""

@@ -1,4 +1,4 @@
-package dev.mcpywrap.android
+package net.easecation.mcpywrap
 
 import android.app.Application
 import androidx.test.platform.app.InstrumentationRegistry
@@ -44,11 +44,11 @@ class HostDirectPipTest {
             withTimeout(180_000){while(repository.sessionStatus()?.optString("phase")!="running")delay(250)}
             val status=repository.sessionStatus()!!
             assertTrue(status.getBoolean("pip"));assertTrue(status.getBoolean("serverReady"))
-            assertEquals(1920,status.getInt("bufferWidth"));assertEquals(1080,status.getInt("bufferHeight"))
-            assertTrue(status.getInt("viewWidth")<1920)
+            assertEquals(status.getInt("renderWidth"),status.getInt("bufferWidth"));assertEquals(status.getInt("renderHeight"),status.getInt("bufferHeight"))
+            assertTrue(status.getInt("viewWidth")<status.getInt("bufferWidth"))
             File(evidence,"running.json").writeText(status.toString())
             val screenshot=application.mutate{application.game(project,result.getString("session"),"screenshot")}
-            assertEquals(1920,screenshot.getInt("width"));assertEquals(1080,screenshot.getInt("height"))
+            assertEquals(status.getInt("bufferWidth"),screenshot.getInt("width"));assertEquals(status.getInt("bufferHeight"),screenshot.getInt("height"))
             File(evidence,"capture.json").writeText(screenshot.toString())
             delay(5000)
         } finally {

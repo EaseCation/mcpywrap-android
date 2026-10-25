@@ -1,4 +1,4 @@
-package dev.mcpywrap.android
+package net.easecation.mcpywrap
 
 import android.graphics.Bitmap
 import androidx.compose.ui.test.*
@@ -24,7 +24,7 @@ class NewProjectFlowTest {
     private fun start(){
         waitText("新建作品")
         compose.waitUntil(30_000){compose.onAllNodesWithTag("operation-progress").fetchSemanticsNodes().isEmpty()}
-        compose.onNodeWithText("新建作品").performClick();waitText("Mod 标识")
+        compose.onNodeWithText("新建作品").performClick();waitText("标准模组");compose.onNodeWithText("标准模组").performClick();waitText("Mod 标识")
     }
     private fun field(tag:String,value:String){compose.onNodeWithTag(tag).performScrollTo().performTextReplacement(value);closeSoftKeyboard()}
     private fun snapshot(name:String){

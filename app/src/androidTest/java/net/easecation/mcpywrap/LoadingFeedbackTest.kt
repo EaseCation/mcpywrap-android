@@ -1,4 +1,4 @@
-package dev.mcpywrap.android
+package net.easecation.mcpywrap
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.Button

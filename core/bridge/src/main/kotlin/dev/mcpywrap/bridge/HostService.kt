@@ -10,7 +10,7 @@ import androidx.core.content.ContextCompat
 import dev.mcpywrap.application.ApplicationFailure
 import kotlinx.coroutines.*
 
-/** User-started loopback service. Idle state only has a system notification. */
+/** Loopback service, enabled on first foreground use. Explicit pause is persistent. */
 class HostService:Service(){
     companion object {
         const val OPEN="dev.mcpywrap.OPEN_DEVELOPMENT"
@@ -22,7 +22,7 @@ class HostService:Service(){
             if(userInitiated)app.getSharedPreferences("host",0).edit().putBoolean("development-enabled",false).apply()
             return app.stopService(Intent(app,HostService::class.java))
         }
-        fun canResume(app:Application)=app.getSharedPreferences("host",0).getBoolean("development-enabled",false)
+        fun canResume(app:Application)=app.getSharedPreferences("host",0).getBoolean("development-enabled",true)
         fun openIntent(context:Context)=context.packageManager.getLaunchIntentForPackage(context.packageName)!!
             .setAction(OPEN).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
     }
@@ -43,6 +43,7 @@ class HostService:Service(){
     override fun onBind(intent:Intent?):IBinder?=null
     override fun onCreate(){super.onCreate();host=HostController.get(application as Application)}
     override fun onStartCommand(intent:Intent?,flags:Int,startId:Int):Int{
+        if(!canResume(application as Application)){stopSelf();return START_NOT_STICKY}
         if(intent?.action=="stop"){getSharedPreferences("host",0).edit().putBoolean("development-enabled",false).apply();stopSelf();return START_NOT_STICKY}
         manager.createNotificationChannel(NotificationChannel("mcpy-host","开发连接状态",NotificationManager.IMPORTANCE_LOW))
         manager.createNotificationChannel(NotificationChannel("mcpy-pair","连接确认",NotificationManager.IMPORTANCE_HIGH))
@@ -65,7 +66,7 @@ class HostService:Service(){
         }
         if(monitor==null)monitor=scope.launch{while(isActive){syncPresentation();delay(250)}}
         scope.launch{try{host.start()}catch(_:Exception){stopSelf()}}
-        return START_NOT_STICKY
+        return START_STICKY
     }
     private fun confirmationIntent(id:String):PendingIntent {
         val confirm=Intent(this,PairingConfirmationActivity::class.java).putExtra("id",id)
@@ -76,8 +77,8 @@ class HostService:Service(){
         val open=pair?.let{confirmationIntent(it)}?:PendingIntent.getActivity(this,0,openIntent(this),PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val stop=PendingIntent.getService(this,1,Intent(this,HostService::class.java).setAction("stop"),PendingIntent.FLAG_IMMUTABLE)
         return NotificationCompat.Builder(this,"mcpy-host").setSmallIcon(android.R.drawable.stat_notify_sync)
-            .setContentTitle(if(pair!=null)"mcpy 有连接请求等待确认"else if(waitingLaunch!=null)"作品已准备，点此继续启动"else "mcpy 开发连接已开启")
-            .setContentText(if(waitingLaunch!=null&&pair==null)"打开 mcpy 继续同一会话，不会重新构建或新建世界"else if(pair==null)"已连接的工具可以开发作品；游戏按需显示小窗"else "点击确认，完成后自动返回原应用")
+            .setContentTitle(if(pair!=null)"mcpy 有连接请求等待确认"else if(waitingLaunch!=null)"作品已准备，点此继续启动"else "mcpy · 外部工具可连接")
+            .setContentText(if(waitingLaunch!=null&&pair==null)"打开 mcpy 继续同一会话，不会重新构建或新建世界"else if(pair==null)"仅本机访问 · 游戏按需显示小窗"else "点击确认，完成后自动返回原应用")
             .setContentIntent(open).setOngoing(true).setGroup("mcpy-service").setOnlyAlertOnce(true)
             .addAction(0,"停止连接",stop).build()
     }

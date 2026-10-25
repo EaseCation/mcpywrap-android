@@ -8,6 +8,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
+import dev.mcpywrap.design.McpySpacing
+import dev.mcpywrap.design.ProductPage
+import dev.mcpywrap.design.ProductFooter
+import dev.mcpywrap.design.ProductCard
+import dev.mcpywrap.design.ProductOutlinedCard
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
@@ -44,14 +49,14 @@ fun NewProjectScreen(draft:NewProjectDraft,preview:JSONObject?,busy:Boolean,moda
     val goBack={if(!busy){if(preview!=null)edit() else back()}else if(!modal)back()}
     BackHandler{goBack()}
     Scaffold(topBar={TopAppBar(title={Text(if(preview==null)"新建模组" else "确认文件结构")},navigationIcon={IconButton(onClick=goBack,enabled=!busy||!modal){Icon(Icons.AutoMirrored.Outlined.ArrowBack,"返回新建")}})},
-        bottomBar={Surface(tonalElevation=3.dp){Column(Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(16.dp)){
+        bottomBar={Surface(tonalElevation=3.dp){ProductFooter{
             Button(onClick=if(preview==null)inspect else create,enabled=!busy&&valid,modifier=Modifier.fillMaxWidth().testTag("new-project-next")){
                 Text(if(busy)"处理中…" else if(preview==null)"查看结构" else "创建模组")
             }
             if(busy&&!modal)TextButton(onClick=cancelPreview,modifier=Modifier.align(Alignment.CenterHorizontally)){Text("取消预览")}
         }}}
     ){padding->
-        Column(Modifier.fillMaxSize().padding(padding).verticalScroll(scroll).padding(20.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
+        ProductPage(Modifier.padding(padding),scrollState=scroll){
             if(busy&&!modal)LoadingFeedback(progress,Modifier.fillMaxWidth().testTag("operation-progress"))
             if(error!=null)Surface(color=MaterialTheme.colorScheme.errorContainer,shape=MaterialTheme.shapes.medium){Column(Modifier.padding(12.dp)){
                 Text(error,color=MaterialTheme.colorScheme.onErrorContainer);TextButton(onClick=dismissError){Text("知道了")}
@@ -61,7 +66,7 @@ fun NewProjectScreen(draft:NewProjectDraft,preview:JSONObject?,busy:Boolean,moda
                     label={Text("作品名称")},supportingText={Text(if(titleValid)"手机中显示的名称，可以用中文" else "名称不能为空，不能包含路径符号")},isError=!titleValid,singleLine=true,enabled=!busy)
                 OutlinedTextField(draft.modName,{change(draft.copy(modName=it))},Modifier.fillMaxWidth().testTag("new-mod-name"),
                     label={Text("Mod 标识")},supportingText={Text(if(identifier(draft.modName))"代码中的名称，例如 MyFirstMod" else "使用字母、数字、下划线；不能以数字开头或使用保留字")},isError=!identifier(draft.modName),singleLine=true,enabled=!busy)
-                TextButton(onClick={advanced=!advanced},enabled=!busy){Icon(if(advanced)Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,null);Text(if(advanced)"收起更多选项" else "更多选项")}
+                TextButton(onClick={advanced=!advanced},enabled=!busy){Icon(if(advanced)Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,null);Spacer(Modifier.width(McpySpacing.sm));Text(if(advanced)"收起更多选项" else "更多选项")}
                 if(advanced){
                     OutlinedTextField(draft.version,{change(draft.copy(version=it))},Modifier.fillMaxWidth().testTag("new-mod-version"),label={Text("模组版本")},singleLine=true,enabled=!busy)
                     OutlinedTextField(draft.scriptDir,{change(draft.copy(scriptDir=it))},Modifier.fillMaxWidth().testTag("new-script-dir"),label={Text("脚本目录")},isError=!identifier(draft.scriptDir),singleLine=true,enabled=!busy)
@@ -75,13 +80,13 @@ fun NewProjectScreen(draft:NewProjectDraft,preview:JSONObject?,busy:Boolean,moda
                 Text(draft.title.trim(),style=MaterialTheme.typography.headlineSmall)
                 Text("内部存储 / mcpy / projects / ${draft.title.trim()}",style=MaterialTheme.typography.bodySmall)
                 Text("${draft.modName} · ${preview.getJSONObject("options").getString("version")}",style=MaterialTheme.typography.labelLarge)
-                OutlinedCard(Modifier.fillMaxWidth().testTag("new-project-tree")){Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(5.dp)){
+                ProductOutlinedCard(Modifier.fillMaxWidth().testTag("new-project-tree")){Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(McpySpacing.xs)){
                     val paths=preview.getJSONArray("files")
                     for(i in 0 until paths.length()){
                         val path=paths.getString(i);val parts=path.trimEnd('/').split('/')
                         Row(Modifier.padding(start=((parts.size-1)*12).dp),verticalAlignment=Alignment.CenterVertically){
-                            Icon(if(path.endsWith('/'))Icons.Outlined.Folder else Icons.Outlined.Description,null,Modifier.size(18.dp))
-                            Spacer(Modifier.width(6.dp));Text(parts.last(),fontFamily=FontFamily.Monospace,style=MaterialTheme.typography.bodySmall)
+                            Icon(if(path.endsWith('/'))Icons.Outlined.Folder else Icons.Outlined.Description,null,Modifier.size(20.dp))
+                            Spacer(Modifier.width(McpySpacing.sm));Text(parts.last(),fontFamily=FontFamily.Monospace,style=MaterialTheme.typography.bodySmall)
                         }
                     }
                 }}

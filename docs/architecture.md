@@ -5,7 +5,7 @@
 | 模块 | 职责 |
 | --- | --- |
 | `app` | Android 入口、权限与 manifest、各模块装配、集成测试 |
-| `core:designsystem` | 官方 Compose Material 3 1.4.0、明暗主题 |
+| `core:designsystem` | 官方 Compose Material 3 1.4.0、明暗主题、统一 4dp 栅格和产品圆角令牌 |
 | `core:model` | 公共目录常量、原样打包的普通模板；不含原型状态机 |
 | `core:engineering` | 发布版 mcpywrap-core、独立核心工作进程、版本安装与回滚；工程调用使用共享 Python API |
 | `core:application` | UI 与 HTTP 共用的工程/游戏操作、互斥锁、启动恢复与诊断 |

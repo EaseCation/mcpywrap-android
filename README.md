@@ -19,7 +19,11 @@
 
 生成模组支持客户端和服务端源码初始化，游戏进程提供双端 Python 调试、源码热更、端侧日志和完整 Surface 截图。
 
-「开发工具」提供分步安装指引，直接显示地址、配对码与连接命令；AI 说明是可选入口，普通终端也可完成配置。连接可通过临时确认卡或通知授权，不显示常驻悬浮图标。作品由开发环境中的标准命令选择。Minis、Termux 和其他工具共用标准 CLI 与 HTTP/WebSocket 协议，详见[本机接口](docs/local-host-api.md)。本机服务默认核心版本由 `gradle.properties` 中的 `mcpyCoreVersion` 确定；Nightly 从 PyPI 安装该版本，因此发布顺序为两个 Python 包完成发布后再构建 Android。本机服务需要支持 `prepare_run` 的核心版本；开发构建可通过 `-PmcpyCoreWheel=<已构建的核心wheel>` 指定待发布核心。
+授权作品目录后，本机服务随 App 打开自动启用，仅监听 `127.0.0.1`；在「开发」可暂停，主动暂停后不会自动恢复。正常使用外部工具直接执行 `run --no-gui --detach --json`，游戏以小窗显示，无需先将 mcpy 拉到前台。
+
+「开发」提供分步安装指引，直接显示地址、配对码与连接命令；AI 说明是可选入口，普通终端也可完成配置。连接可通过临时确认卡或通知授权，不显示常驻悬浮图标。作品由开发环境中的标准命令选择。Minis、Termux 和其他工具共用标准 CLI 与 HTTP/WebSocket 协议，详见[本机接口](docs/local-host-api.md)。本机服务默认核心版本由 `gradle.properties` 中的 `mcpyCoreVersion` 确定；Nightly 从 PyPI 安装该版本，因此发布顺序为两个 Python 包完成发布后再构建 Android。本机服务需要支持 `prepare_run` 的核心版本；开发构建可通过 `-PmcpyCoreWheel=<已构建的核心wheel>` 指定待发布核心。
+
+启动游戏后，主程序自动准备日志页；全屏中只保留缩小按钮，缩为画中画后即可查看日志。外部工具启动时不抢占前台。首页运行卡片可查看日志、重新测试同一实例、返回游戏或保存退出。新建与导入位于作品页顶部；「新建作品」内统一选择标准模组或欢迎语示例模板。日志按客户端、服务端和引擎分频道，支持级别着色、搜索高亮与上下条定位、仅显示匹配、暂停更新、一键滚动到底部、跟随最新、原始记录和复制。页面仅显示最近的有界记录，完整文件仍保存在 `/sdcard/mcpy/logs/<会话>/`；着色不代表模组健康诊断。
 
 ## 构建与运行
 
@@ -30,7 +34,7 @@ sh tools/build.sh
 sh tools/run-product.sh
 ```
 
-应用 ID：`dev.mcpywrap.android`；输出：`app/build/outputs/apk/debug/app-debug.apk`。这是开发签名的可安装 APK。0.5.1 起 Nightly 使用仓库 Actions Secret 中的专用固定签名；私钥不进入源码仓库。
+应用 ID：`net.easecation.mcpywrap`；输出：`app/build/outputs/apk/debug/app-debug.apk`。这是开发签名的可安装 APK。0.5.1 起 Nightly 使用仓库 Actions Secret 中的专用固定签名；私钥不进入源码仓库。
 
 GitHub Actions 会在分支推送、PR、`v*` 标签推送及手动触发时自动构建，上传可直接下载的 ARM64 Debug APK 和检查报告。默认主分支构建成功后自动更新固定的 `nightly` Release，APK 地址保持不变。依赖安装、缓存、签名兼容与下载方式见 [CI 说明](docs/ci.md)。
 

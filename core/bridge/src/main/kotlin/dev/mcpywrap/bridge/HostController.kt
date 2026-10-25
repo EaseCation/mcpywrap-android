@@ -56,17 +56,14 @@ class HostController private constructor(val app:Application) {
             coreVersion=status.getString("version")
             val supported=status.getJSONObject("capabilities").getJSONArray("operations")
             require((0 until supported.length()).any{supported.getString(it)=="prepare_run"}){"请先升级工程核心，当前版本不支持本机开发接口"}
-            server=HostServer(this);server!!.start(port);online=true;error=null
+            server=HostServer(this);server!!.start(port);online=true;error=null;taskMutable.value=store.recentJobs()
             event("service",JSONObject().put("state","online"));changed()
             monitor?.cancel()
             monitor=scope.launch {
                 var lastState="";var session="";var cursor=0L
                 while(isActive&&online){
                     runCatching {
-                        application.pendingLaunches.read()?.let{pending->
-                            val id=pending.optString("operation_id");val client=pending.optString("client_id")
-                            if(id.isNotBlank()&&store.job(id,client).optString("state")=="waiting_user")operationStatus(id,client)
-                        }
+                        store.waitingJobOwners().forEach{(id,client)->operationStatus(id,client)}
                         val current=application.repository.session()
                         if(current!=null){
                             val identity=File(current.getString("session")).name
@@ -96,6 +93,8 @@ class HostController private constructor(val app:Application) {
         .put("launch_preconditions",application.diagnostics.preflight())
         .put("background_execution",application.diagnostics.execution.inspect())
         .put("recovery_uri","mcpy://service/start")
+        .put("launch_policy",JSONObject().put("default","direct_run").put("bring_host_to_front",false)
+            .put("recovery","only_after_failure_and_user_confirmation"))
         .put("client_commands",JSONArray(listOf("modsdk","skill","host")))
         .put("api_only_operations",JSONArray(listOf("instances.create","instances.trash","files.write","files.trash","projects.rename","projects.trash")))
         .put("command_examples",JSONObject().put("instances.list","mcpy --project <作品目录> run --list --json").put("status","mcpy --project <作品目录> status --session <id> --json"))
@@ -139,7 +138,7 @@ class HostController private constructor(val app:Application) {
                                 progress={label->store.update(id){it.put("progress",label)};if(launchProgress.value!=null)launchProgress.value=label;event("progress",JSONObject().put("operation_id",id).put("text",label),client)},prepare=prepare,owner=JSONObject().put("operation_id",id).put("client_id",client))
                         }
                         if(operation in listOf("run","restart")&&!parameters.optBoolean("list")&&!parameters.optBoolean("clean_all")&&parameters.optString("delete").isBlank()){
-                            val presenter=gameLauncher?:throw dev.mcpywrap.application.ApplicationFailure("host_service_required","请在开发工具页开启连接服务")
+                            val presenter=gameLauncher?:throw dev.mcpywrap.application.ApplicationFailure("host_service_required","请在「开发」页恢复连接")
                             presenter(execute)
                         }else execute()
                     }
@@ -247,16 +246,19 @@ class HostController private constructor(val app:Application) {
 阅读该仓库 README.md 和 SKILL.md，使用 Python 3.9+。首次安装执行 python3 <技能目录>/scripts/setup.py，按官方流程获取精简 Wiki；已有安装先执行 python3 <技能目录>/scripts/session.py，按返回结果补齐资料或更新受管副本，不重复全量下载。执行 python3 <技能目录>/scripts/setup.py --check，并用 python3 <技能目录>/scripts/query.py detail SetAttrValue --side server --examples 0 验证真实查询。确认当前 Agent 已发现此技能；需要刷新技能或新会话时明确告诉我，不能把克隆成功当成发现成功。
 编写模组前按此 skill 选择相关开发指引，按需核验目标游戏版本、API、端侧及限制；工程管理、构建和游戏操作仍使用 mcpywrap 标准 skill。无需另外安装文档 MCP，也不要将资料工具加入 mcpy 或模组依赖。网络失败停止本轮重试：已有可用快照则注明版本继续，无快照则告诉我如何恢复网络；不阻塞 mcpy 配对，但未完成查询时不要声称 API 已核验。""".trimIndent()
     }
+    private val gameWorkflow="""保持用户在当前开发工具或聊天界面，直接执行 mcpy --project <作品目录> run --no-gui --detach --json，让 App 自动呈现游戏小窗；不要先打开 mcpy，不要执行 android-open、am start 或 mcpy://service/start 作为启动前置步骤。launch_preconditions 中 background_launch=unknown 或历史失败不是当前阻塞；没有明确 blocker 就正常提交 run，以本次返回为准。
+仅在实际返回 needs_user_action、waiting_user 或 host_unavailable 时停止自动尝试，转述 user_message 并等待用户确认；恢复链接只供用户在失败后手动打开，不由 AI 自动调用。已有 operation_id 时，确认后用 host resume 查询原任务，不重复启动。后台易断连时，请用户在 mcpy「开发」页设置后台运行，小米选择「无限制」。
+工程由 App 内核心执行，以双端日志和游戏截图验证修改。pip 字段表示画中画，不表示 Python 环境就绪。""".trimIndent()
     fun developmentPrompt(kind:String):String = """请使用 mcpywrap 标准 skill 在当前开发环境中选择或新建作品。
-${documentationSetup(kind)}
-先检查 mcpy host status 的宿主能力和 launch_preconditions；出现 needs_user_action 或 host_unavailable 时立即停止自动尝试，转述 user_message 并等待我明确确认，再查询原任务；不要自行反复唤起。切换应用后断连时，请我在开发连接页打开省电设置，小米选择「无限制」；工程由 App 内核心执行，游戏通过画中画显示。用真实双端日志和截图验证源码修改；pip 字段表示画中画，不表示 Python 环境就绪。""".trimIndent()
+$gameWorkflow
+${documentationSetup(kind)}""".trimIndent()
     fun setupPrompt(kind:String):String {
         val destination=if(kind=="Minis")"/var/minis/skills/mcpywrap"else "当前 Agent 的标准技能目录"
         return """请帮我准备手机上的 mcpy 开发工具环境，暂时不配对。
 使用官方 https://github.com/EaseCation/mcpywrap 的 mcpywrap，按标准 pip/uv 安装 Python CLI，并用 mcpy skill install 安装完整 skill 到 $destination。
 Python、虚拟环境和 Git 放在本应用私有 Linux 环境。作品使用内部存储的 mcpy 文件夹，Minis 通常挂载到 /var/minis/mounts/mcpy；检查真实读写权限，不创建同名私有副本。
 ${documentationSetup(kind)}
-模型账号、目录挂载或系统权限需要我操作时，每次给我一个明确步骤。准备完成后，让我回到 mcpy 的开发工具页点击「工具已准备好，连接手机」，取得连接提示词。不要自行猜测配对码或读取凭据。""".trimIndent()
+模型账号、目录挂载或系统权限需要我操作时，每次给我一个明确步骤。准备完成后，让我回到 mcpy 的「开发」页查看「3 · 连接工具」，取得连接提示词。不要自行猜测配对码或读取凭据。""".trimIndent()
     }
     fun bootstrapPrompt(kind:String):String {
         val code=store.invitationCode().ifEmpty{store.newCode()}
@@ -266,8 +268,9 @@ ${documentationSetup(kind)}
 ${documentationSetup(kind)}
 在当前 Linux 环境准备 Python、pip/uv 和 Git。工具和虚拟环境放在此应用私有环境中；项目必须使用手机内部存储的 mcpy 文件夹。
 先确认共享目录可读写；Minis 通常挂载为 /var/minis/mounts/mcpy。目录权限或模型登录需要我操作时，给我一个明确步骤。
-使用 mcpy host pair --url $endpoint --code $code --workspace <实际挂载路径> --label "$kind" 配对。等待我点击 mcpy 确认卡或通知中的「允许连接」，无需要求我来回切换 App；没有提示时再引导打开开发工具页。
-执行 mcpy --project <挂载目录>/projects/<作品> host status --json，核对核心版本、能力和 launch_preconditions；能连接不代表能启动游戏，出现 needs_user_action 或 host_unavailable 时立即停止自动尝试，把 user_message 告诉我并等我明确确认。不要循环重试或自行唤起；用户确认后只查询原任务。后台容易断连时引导我打开 mcpy 开发连接页的省电设置，小米选择「无限制」。绑定后始终由 App 解析、组装与运行；失败不退回本地构建，不输出连接令牌。
+使用 mcpy host pair --url $endpoint --code $code --workspace <实际挂载路径> --label "$kind" 配对。等待我点击 mcpy 确认卡或通知中的「允许连接」，无需要求我来回切换 App；没有提示时再引导打开「开发」页。
+执行 mcpy --project <挂载目录>/projects/<作品> host status --json，核对核心版本和能力。绑定后始终由 App 解析、组装与运行；失败不退回本地构建，不输出连接令牌。
+$gameWorkflow
 完成后按标准 skill 创建普通源码模组、构建并在游戏小窗运行，以双端日志和游戏截图验证结果。连接邀请一小时内有效。网络中断或目录权限修复后重试同一条配对命令，继续原请求；明确过期才重新复制。""".trimIndent()
     }
 }

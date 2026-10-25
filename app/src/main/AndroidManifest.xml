@@ -26,8 +26,8 @@
                 <data android:scheme="mcpy" android:host="service" android:path="/start"/>
             </intent-filter>
         </activity>
-        <activity android:name=".GamePipLauncherActivity" android:exported="false" android:taskAffinity="dev.mcpywrap.android.game" android:excludeFromRecents="true" android:theme="@style/Theme.Mcpy.PipLauncher" />
-        <activity android:name="com.mojang.minecraftpe.MainActivity" android:process=":game" android:launchMode="singleTop" android:taskAffinity="dev.mcpywrap.android.game" android:exported="false" android:theme="@style/Theme.Mcpy.PipLauncher" android:supportsPictureInPicture="true" android:resizeableActivity="true" android:configChanges="orientation|screenSize|keyboardHidden|keyboard|uiMode|density|locale|layoutDirection|fontScale|navigation|screenLayout|smallestScreenSize|touchscreen">
+        <activity android:name=".GamePipLauncherActivity" android:exported="false" android:taskAffinity="${applicationId}.game" android:excludeFromRecents="true" android:theme="@style/Theme.Mcpy.PipLauncher" />
+        <activity android:name="com.mojang.minecraftpe.MainActivity" android:process=":game" android:launchMode="singleTop" android:taskAffinity="${applicationId}.game" android:exported="false" android:theme="@style/Theme.Mcpy.PipLauncher" android:supportsPictureInPicture="true" android:resizeableActivity="true" android:configChanges="orientation|screenSize|keyboardHidden|keyboard|uiMode|density|locale|layoutDirection|fontScale|navigation|screenLayout|smallestScreenSize|touchscreen">
             <meta-data android:name="android.app.lib_name" android:value="minecraftpe"/>
         </activity>
         <service android:name="androidx.work.impl.foreground.SystemForegroundService" android:foregroundServiceType="dataSync" tools:node="merge" />

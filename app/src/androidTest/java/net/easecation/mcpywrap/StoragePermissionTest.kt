@@ -1,4 +1,4 @@
-package dev.mcpywrap.android
+package net.easecation.mcpywrap
 
 import android.os.ParcelFileDescriptor
 import androidx.compose.ui.test.*

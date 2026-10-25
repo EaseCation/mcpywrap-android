@@ -26,6 +26,9 @@ data class ProductState(
     val error: String? = null, val notice: String? = null, val undoTrash: String? = null,
     val runtimeReady: Boolean = false, val installing: Boolean = false, val installText: String = "正在检查运行环境", val installPercent: Float? = null,
     val phase: String = "idle", val runtimeError: String = "", val session: String = "", val smallWindow: Boolean = true,val runtimeLoading:String="",
+    val logSession:String?=null, val sessionProject:String="", val sessionInstance:String="", val sessionWorldName:String="",
+    val sessionPrevious:String="", val restartBusy:Boolean=false, val canRestart:Boolean=false, val restartReason:String="",
+    val sessionProjectId:String="", val gameInPip:Boolean=false,
     val tab: Int = 0, val instancesOpen: Boolean = false, val legacyWorlds: List<WorkWorld> = emptyList(), val trash: List<TrashItem> = emptyList(),
     val coreVersion: String? = null, val coreUpdate: String? = null, val coreChecked: Boolean = false, val coreCanRollback: Boolean = false,
     val newProject:NewProjectDraft?=null, val newProjectPreview:org.json.JSONObject?=null
@@ -42,6 +45,7 @@ class StudioViewModel(app: Application): AndroidViewModel(app) {
     private val importer=ProjectImporter(app,repository)
     private val engineering=EngineeringClient(app)
     private val application=dev.mcpywrap.application.ApplicationOperations.get(app)
+    private val visits=app.getSharedPreferences("project-visits",0)
     private var coreInspected=false
     private val mutable=MutableStateFlow(ProductState(smallWindow=app.getSharedPreferences("settings",0).getBoolean("pip",true)))
     val state=mutable.asStateFlow()
@@ -61,11 +65,32 @@ class StudioViewModel(app: Application): AndroidViewModel(app) {
                 },installPercent=if(total>0)bytes.toFloat()/total else null)}
             }
         }
-        viewModelScope.launch { while(isActive){delay(2000);if(state.value.permission){runCatching{withContext(Dispatchers.IO){repository.sessionStatus() to repository.session()}}.onSuccess{(status,config)->mutable.update{it.copy(phase=status?.optString("phase")?:"idle",runtimeError=status?.optString("error")?:"",runtimeLoading=status?.optString("loadingStage")?:"",session=config?.optString("session")?:"")}}} } }
+        viewModelScope.launch {while(isActive){delay(2000);if(state.value.permission)runCatching{refreshSession()}}}
+
     }
-    private fun action(label: String, modal:Boolean=false, block: suspend ()->Unit) {
+    private suspend fun refreshSession(){
+        val snapshot=withContext(Dispatchers.IO){
+            val record=repository.session()
+            val status=repository.sessionStatus(record)
+            val reason=if(record==null)"还没有测试记录"else runCatching{
+                application.resolveCurrentSessionInstance(record,application.resolveCurrentSessionProject(record));""
+            }.getOrElse{it.message?:"当前测试实例已不可用"}
+            Triple(record,status,reason)
+        }
+        val (config,status,reason)=snapshot
+        mutable.update{
+            val next=config?.optString("session").orEmpty();val phase=status?.optString("phase")?:"idle"
+            val open=next.isNotBlank()&&(next!=it.session||it.phase in listOf("idle","waiting_user","unknown"))&&phase in listOf("loading","running")&&it.opened==null&&it.newProject==null&&!it.restartBusy
+            it.copy(phase=phase,runtimeError=status?.optString("error").orEmpty(),runtimeLoading=status?.optString("loadingStage").orEmpty(),session=next,
+                sessionProject=config?.optString("project").orEmpty(),sessionProjectId=config?.optString("projectId").orEmpty(),sessionInstance=config?.optString("instanceId").orEmpty(),
+                sessionWorldName=config?.optString("worldName").orEmpty(),sessionPrevious=config?.optString("previous_session").orEmpty(),gameInPip=status?.optBoolean("pip")==true,
+                canRestart=reason.isBlank()&&phase!="saving",restartReason=if(phase=="saving")"正在保存，完成后可重新测试"else reason,
+                logSession=if(open)next else it.logSession)
+        }
+    }
+    private fun action(label: String, modal:Boolean=false, initialProgress:String=label, block: suspend ()->Unit) {
         if(state.value.busy)return
-        mutable.update{it.copy(busy=true,progress=label,operationTitle=label,waitModal=modal,error=null)}
+        mutable.update{it.copy(busy=true,progress=initialProgress,operationTitle=label,waitModal=modal,error=null)}
         operationJob=viewModelScope.launch {
             try { application.mutate{require(Environment.isExternalStorageManager()){ "需要允许所有文件访问，文件仍保留在 /sdcard/mcpy" };repository.initialize();block();reload()} }
             catch(e:CancellationException){
@@ -78,7 +103,7 @@ class StudioViewModel(app: Application): AndroidViewModel(app) {
     }
     private fun reload() {
         try {
-        val projects=repository.projects();repository.migrateLegacyWorlds()
+        val projects=repository.projects().sortedWith(compareByDescending<WorkProject>{visits.getLong(it.id,0)}.thenBy{it.name.lowercase()});repository.migrateLegacyWorlds()
         val selected=state.value.selected?.let{old->projects.find{it.folder==old.folder}}
         val files=selected?.let{repository.list(it.folder,state.value.directory)}?:emptyList()
         val worlds=selected?.let{repository.worlds(it)}?:emptyList()
@@ -129,6 +154,7 @@ class StudioViewModel(app: Application): AndroidViewModel(app) {
     fun select(project:WorkProject)=action("打开作品"){selectInternal(project)}
     private suspend fun selectInternal(project:WorkProject){
         val files=repository.list(project.folder);val worlds=repository.worlds(project)
+        visits.edit().putLong(project.id,System.currentTimeMillis()).apply()
         currentCoroutineContext().ensureActive()
         mutable.update{it.copy(selected=project,directory="",files=files,worlds=worlds,opened=null,draft="",tab=0,instancesOpen=false)}
     }
@@ -199,12 +225,33 @@ class StudioViewModel(app: Application): AndroidViewModel(app) {
         if(!state.value.runtimeReady){mutable.update{it.copy(tab=2,notice="先安装运行环境，作品已保留")};return}
         action("准备测试世界") {
             application.start(project,world,replace,state.value.smallWindow,progress={label->mutable.update{it.copy(progress=label)}})
+            repository.session()?.let{record->record.optString("session").takeIf{it.isNotBlank()}?.let{session->mutable.update{it.copy(logSession=session,session=session,sessionProject=project.folder,sessionProjectId=project.id,sessionInstance=record.optString("instanceId"),sessionWorldName=record.optString("worldName"),sessionPrevious=record.optString("previous_session"))}}}
         }
     }
-    fun showGame()=action("显示游戏"){application.showGame()}
-    fun logs()=action("读取运行日志") {
-        val session=state.value.session;require(session.isNotBlank()){ "还没有运行记录" }
-        val file=File(session,"runtime.log");val log=if(file.isFile)java.io.RandomAccessFile(file,"r").use{f->f.seek((f.length()-16000).coerceAtLeast(0));val bytes=ByteArray((f.length()-f.filePointer).toInt());f.readFully(bytes);bytes.toString(Charsets.UTF_8)} else "暂时没有日志"
-        mutable.update{it.copy(error=log)}
+    fun restartCurrentSession() {
+        val current=state.value
+        if(current.busy||current.restartBusy||!current.canRestart)return
+        if(current.dirty){error("请先保存正在编辑的文件，再重新测试");return}
+        mutable.update{it.copy(restartBusy=true)}
+        action("重新测试",initialProgress="等待前一个操作完成") {
+            try {
+                mutable.update{it.copy(progress="等待前一个操作完成")}
+                application.restartCurrentSession(current.session,smallWindow=state.value.smallWindow,progress={label->mutable.update{it.copy(progress=label)}})
+                refreshSession()
+                mutable.update{it.copy(logSession=it.session)}
+            }finally{mutable.update{it.copy(restartBusy=false)}}
+        }
+        operationJob?.invokeOnCompletion{mutable.update{it.copy(restartBusy=false)}}
     }
+    fun returnToSessionProject(){
+        val project=state.value.projects.firstOrNull{it.id==state.value.sessionProjectId}
+        if(project!=null)select(project)else {closeProject();tab(0)}
+    }
+    fun showGame()=action("显示游戏"){application.showGame()}
+    fun logs() {
+        val session=state.value.session
+        if(session.isBlank()){error("还没有运行记录");return}
+        mutable.update{it.copy(logSession=session)}
+    }
+    fun closeLogs(){mutable.update{it.copy(logSession=null)}}
 }

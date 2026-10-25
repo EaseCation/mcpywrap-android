@@ -5,7 +5,7 @@
         <activity android:name="dev.mcpywrap.bridge.PairingConfirmationActivity" android:exported="false" android:excludeFromRecents="true" android:taskAffinity="${applicationId}.confirmation" android:theme="@style/Theme.Mcpy.ConnectionConfirmation"/>
         <receiver android:name="dev.mcpywrap.bridge.PairingActionReceiver" android:exported="false"/>
         <service android:name="dev.mcpywrap.bridge.HostService" android:exported="false" android:foregroundServiceType="specialUse">
-            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="User-started loopback development server for local project tools and game debugging"/>
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="Pausable loopback development server started when the user opens the app, for local project tools and game debugging"/>
         </service>
     </application>
 </manifest>

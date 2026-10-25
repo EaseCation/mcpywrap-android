@@ -1,8 +1,8 @@
 plugins { id("com.android.application"); id("org.jetbrains.kotlin.android"); id("org.jetbrains.kotlin.plugin.compose") }
 android {
-    namespace = "dev.mcpywrap.android"; compileSdk = 36
+    namespace = "net.easecation.mcpywrap"; compileSdk = 36
     defaultConfig {
-        applicationId = "dev.mcpywrap.android"
+        applicationId = "net.easecation.mcpywrap"
         minSdk = 30; targetSdk = 36; versionCode = 6; versionName = "0.5.1"; ndk { abiFilters += "arm64-v8a" }
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -35,9 +35,9 @@ dependencies {
     androidTestImplementation("io.github.rosemoe:editor:0.24.4")
     androidTestImplementation(platform("androidx.compose:compose-bom:2025.10.01"))
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
-    androidTestImplementation("androidx.test.ext:junit:1.2.1")
-    androidTestImplementation("androidx.test:runner:1.6.2")
-    androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
+    androidTestImplementation("androidx.test.ext:junit:1.3.0")
+    androidTestImplementation("androidx.test:runner:1.7.0")
+    androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
 

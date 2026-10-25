@@ -1,6 +1,6 @@
 # 本机开发服务（HTTP v2）
 
-在「开发工具」中由用户开启服务。默认地址 `http://127.0.0.1:17653`，只监听回环，不提供远程 Shell。不同开发工具共用同一协议。用户关闭服务后连接不可用；客户端不得回退到本地核心执行工程操作。
+首次打开 App 并授权作品目录后默认启动服务；「开发」可暂停或恢复，主动暂停会保留到用户再次开启。默认地址 `http://127.0.0.1:17653`，只监听回环，不提供远程 Shell。不同开发工具共用同一协议。用户关闭服务后连接不可用；客户端不得回退到本地核心执行工程操作。
 
 ## 配对与授权
 
@@ -98,7 +98,9 @@ App 保留原启动请求，用户返回 App 或点击“继续”后，直接�
 
 `GET /v2/operations/{id}` 对有关联会话的任务附加最新 `observation`，并将已实际启动的 `waiting_user` 原任务收敛为 `completed`。`mcpy host resume --operation <id>` 查询并等待同一操作，不重新准备或创建实例。历史未知结果可据新证据返回 `reconciled=true`；未确认时仍提供诊断。准备失效后重新运行必须使用原实例 ID。
 
-公开恢复链接为 `mcpy://service/start`。它打开开发连接页，恢复用户此前已开启、尚未主动暂停的开发模式，并在用户返回 App 后续接已有、仍获授权的待启动请求；不从链接参数指定作品，也不批准新客户端。系统阻止唤起时仍需用户打开 App。服务不可达时，CLI 返回最后已知信息及观察时间，不猜测是 App 未运行、端口错误还是服务关闭。
+正常启动直接提交 `run`，由宿主显示游戏小窗。`launch_policy.default=direct_run`、`bring_host_to_front=false`；无需先打开 App，后台权限未知或旧失败记录不代替本次运行结果。
+
+公开恢复链接为 `mcpy://service/start`，仅用于实际失败后由用户手动恢复，客户端不得将它作为启动前置步骤自动调用。它打开开发连接页，恢复用户此前已开启、尚未主动暂停的开发模式，并在用户返回 App 后续接已有、仍获授权的待启动请求；不从链接参数指定作品，也不批准新客户端。系统阻止唤起时仍需用户打开 App。服务不可达时，CLI 返回最后已知信息及观察时间，不猜测是 App 未运行、端口错误还是服务关闭。
 
 `logs --source all` 聚合 `game/engine`，返回 `streams` 与分源 `cursors`；续读分别指定对应来源和 `after`。`--follow --source all` 由标准 CLI 维护独立游标。无游戏日志时明确提示尚无加载证据。截图可在已有有效 Surface 的加载阶段请求，未就绪时返回 `game_surface_not_ready` 及诊断；截图不证明世界或模组已就绪。
 
@@ -128,6 +130,6 @@ App 保留原启动请求，用户返回 App 或点击“继续”后，直接�
 
 需要用户恢复界面或权限时，任务结果和错误携带 `needs_user_action=true`、`next_action=ask_user`、`retryable=false`、`retry_policy=after_user_confirmation`、`user_message` 与 `agent_instruction`。客户端必须停止自动启动、重新构建和循环重试，先向用户展示下一步，收到明确确认后再用原 `operation_id` 查询；已有操作附带 `resume_command`。`host_unavailable` 也遵循此交接，但不推断已提交、已准备或已运行。
 
-`capabilities.background_execution` 提供后台耗电策略的引导，独立于后台弹出界面权限。小米可通过 `android.settings.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` 与 `package:<应用ID>` 打开应用省电策略，用户自行选择“无限制”；系统不支持该入口时依次使用兼容设置页和应用详情。入口仅出现在开发工具 Tab，由用户点击，不自动请求或更改权限。
+`capabilities.background_execution` 提供后台耗电策略的引导，独立于后台弹出界面权限。小米可通过 `android.settings.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` 与 `package:<应用ID>` 打开应用省电策略，用户自行选择“无限制”；系统不支持该入口时依次使用兼容设置页和应用详情。入口仅出现在开发 Tab，由用户点击，不自动请求或更改权限。
 
 `system_optimization_exempt` 只表示 Android 电池优化豁免状态。无法可靠读取厂商后台策略时仍报告 `state=unknown`，不能因用户打开过设置或 Android 已豁免就声称小米不会冻结。后台耗电策略作为提示，不作为普通编辑和手动运行的硬性前置条件。

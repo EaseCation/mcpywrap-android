@@ -86,7 +86,7 @@ class HostStore(private val directory:File,private val workspace:File,private va
             require(it.getString("fingerprint")==fingerprint){"配对请求标识已用于不同连接"}
             return pairingStart(it)
         }
-        require(currentCode().isNotEmpty()&&MessageDigest.isEqual(code.toByteArray(),input.optString("code").toByteArray())){"连接邀请已过期，请在开发工具中生成新的配对码"}
+        require(currentCode().isNotEmpty()&&MessageDigest.isEqual(code.toByteArray(),input.optString("code").toByteArray())){"连接邀请已过期，请在「开发」页生成新的连接验证码"}
         val access=input.optString("access","shared");require(access in listOf("shared","files")){"未知目录访问方式"}
         require(pairings.size<10){"配对请求过多，请先完成或拒绝已有连接"}
         val id=UUID.randomUUID().toString();val proof=secret();val challenge=secret();val poll=secret()
@@ -169,6 +169,9 @@ class HostStore(private val directory:File,private val workspace:File,private va
         receipts.put(step,fingerprint);value.put("preparation_receipts",receipts)
         write(File(directory,"jobs/$id.json"),value.toString())
         return true
+    }
+    @Synchronized fun waitingJobOwners():List<Pair<String,String>> = jobFiles().mapNotNull{file->
+        runCatching{JSONObject(file.readText())}.getOrNull()?.takeIf{it.optString("state")=="waiting_user"}?.let{it.getString("operation_id") to it.getString("client_id")}
     }
     @Synchronized fun recentJobs():List<JSONObject> = jobFiles().sortedByDescending{it.lastModified()}.take(8).mapNotNull{file->
         runCatching{val job=JSONObject(file.readText());publicJob(job).put("operation",job.getJSONObject("request").getString("operation")).put("project",job.getJSONObject("request").optString("project"))}.getOrNull()

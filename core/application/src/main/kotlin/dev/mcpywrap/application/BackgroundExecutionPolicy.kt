@@ -15,7 +15,7 @@ class BackgroundExecutionPolicy(private val app:Application,private val launch:B
         return JSONObject().put("state",if(launch.xiaomi||exempt==null)"unknown"else if(exempt)"ok"else "restricted")
             .put("vendor",if(launch.xiaomi)"xiaomi"else android.os.Build.MANUFACTURER)
             .put("system_optimization_exempt",exempt?:JSONObject.NULL).put("vendor_policy_verified",false)
-            .put("hint",if(launch.xiaomi)"在 mcpy 开发连接页打开省电设置，手动选择「无限制」；系统可能限制后台联网和 CPU。"else "在 mcpy 开发连接页打开后台设置，允许后台运行或关闭此应用的电池优化。")
+            .put("hint",if(launch.xiaomi)"若实际出现后台断连，请用户在 mcpy「开发」页打开省电设置，选择「无限制」。这不是运行游戏的前置步骤。"else "若实际出现后台断连，请用户在 mcpy「开发」页检查后台运行设置；正常连接时直接运行游戏。")
             .put("settings_action",intent.action).put("settings_uri",intent.dataString?:JSONObject.NULL).put("actor","user")
     }
     fun settingsIntent():Intent {

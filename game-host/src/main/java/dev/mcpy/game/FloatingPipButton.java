@@ -23,8 +23,8 @@ public final class FloatingPipButton extends ImageButton {
     private final SharedPreferences preferences;
     private final int slop;
     private final float margin;
-    private boolean rightEdge, dragging;
-    private float fractionY, downX, downY, startX, startY;
+    private boolean dragging;
+    private float fractionX, fractionY, downX, downY, startX, startY, positionX, positionY;
     private View container;
     private final RectF bounds = new RectF();
     private final OnLayoutChangeListener layoutListener = (v,l,t,r,b,ol,ot,or_,ob) -> restorePosition();
@@ -34,7 +34,7 @@ public final class FloatingPipButton extends ImageButton {
         float density = getResources().getDisplayMetrics().density;
         margin = 8 * density;
         preferences = context.getSharedPreferences("game-overlay", Context.MODE_PRIVATE);
-        rightEdge = preferences.getBoolean("rightEdge", true);
+        fractionX = preferences.getFloat("fractionX", 1);
         fractionY = preferences.getFloat("fractionY", 0);
         slop = ViewConfiguration.get(context).getScaledTouchSlop();
         setContentDescription("缩小为游戏浮窗");
@@ -70,9 +70,17 @@ public final class FloatingPipButton extends ImageButton {
         int left = 0, top = 0, right = 0, bottom = 0;
         WindowInsets insets = getRootWindowInsets();
         if (insets != null) {
-            android.graphics.Insets safe = insets.getInsetsIgnoringVisibility(
-                    WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
-            left = safe.left; top = safe.top; right = safe.right; bottom = safe.bottom;
+            android.graphics.Insets bars = insets.getInsets(WindowInsets.Type.systemBars());
+            android.graphics.Insets cutout = insets.getInsetsIgnoringVisibility(WindowInsets.Type.displayCutout());
+            int[] rootOrigin = new int[2], parentOrigin = new int[2];
+            View root = getRootView();
+            root.getLocationOnScreen(rootOrigin); container.getLocationOnScreen(parentOrigin);
+            // Insets are window-relative. Account for a content parent which already
+            // consumed them, and do not reserve space for hidden fullscreen bars.
+            left = Math.max(0, rootOrigin[0] + Math.max(bars.left, cutout.left) - parentOrigin[0]);
+            top = Math.max(0, rootOrigin[1] + Math.max(bars.top, cutout.top) - parentOrigin[1]);
+            right = Math.max(0, parentOrigin[0] + container.getWidth() - (rootOrigin[0] + root.getWidth() - Math.max(bars.right, cutout.right)));
+            bottom = Math.max(0, parentOrigin[1] + container.getHeight() - (rootOrigin[1] + root.getHeight() - Math.max(bars.bottom, cutout.bottom)));
         }
         bounds.set(left + margin, top + margin,
                 Math.max(left + margin, container.getWidth() - getWidth() - right - margin),
@@ -82,13 +90,17 @@ public final class FloatingPipButton extends ImageButton {
     public void restorePosition() {
         if (dragging || container == null || getVisibility() != VISIBLE || container.getWidth() == 0 || getWidth() == 0) return;
         updateBounds();
-        place(rightEdge ? bounds.right : bounds.left,
+        place(bounds.left + Math.max(0, Math.min(1, fractionX)) * bounds.width(),
                 bounds.top + Math.max(0, Math.min(1, fractionY)) * bounds.height());
     }
 
     private void place(float x, float y) {
         android.widget.FrameLayout.LayoutParams params = (android.widget.FrameLayout.LayoutParams) getLayoutParams();
-        int left = Math.round(x), top = Math.round(y);
+        positionX = x; positionY = y;
+        // FrameLayout adds its own padding to child margins. Store actual parent
+        // coordinates separately so layout timing cannot change the drag endpoint.
+        int left = Math.round(x) - container.getPaddingLeft();
+        int top = Math.round(y) - container.getPaddingTop();
         if (params.leftMargin == left && params.topMargin == top) return;
         // SurfaceView's window transparent region must follow the real layout bounds.
         // Translation alone can leave the moved overlay punched out above the game surface.
@@ -98,11 +110,12 @@ public final class FloatingPipButton extends ImageButton {
     }
 
     @Override public boolean onTouchEvent(MotionEvent event) {
+        if (container == null) return super.onTouchEvent(event);
         switch (event.getActionMasked()) {
             case MotionEvent.ACTION_DOWN:
                 updateBounds();
                 downX = event.getRawX(); downY = event.getRawY();
-                startX = getX(); startY = getY(); dragging = false;
+                startX = positionX = getX(); startY = positionY = getY(); dragging = false;
                 setPressed(true);
                 getParent().requestDisallowInterceptTouchEvent(true);
                 return true;
@@ -118,9 +131,9 @@ public final class FloatingPipButton extends ImageButton {
                 setPressed(false);
                 getParent().requestDisallowInterceptTouchEvent(false);
                 if (dragging) {
-                    rightEdge = getX() >= bounds.centerX();
-                    fractionY = bounds.height() > 0 ? (getY() - bounds.top) / bounds.height() : 0;
-                    preferences.edit().putBoolean("rightEdge", rightEdge).putFloat("fractionY", fractionY).apply();
+                    fractionX = bounds.width() > 0 ? (positionX - bounds.left) / bounds.width() : 0;
+                    fractionY = bounds.height() > 0 ? (positionY - bounds.top) / bounds.height() : 0;
+                    preferences.edit().putFloat("fractionX", fractionX).putFloat("fractionY", fractionY).apply();
                     dragging = false;
                     restorePosition();
                 } else performClick();

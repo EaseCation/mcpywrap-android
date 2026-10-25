@@ -1,4 +1,4 @@
-package dev.mcpywrap.android
+package net.easecation.mcpywrap
 
 import android.app.Activity
 import android.app.ActivityOptions
@@ -51,8 +51,12 @@ class GamePipLauncherActivity : Activity() {
                 val game = Intent().setClassName(this, "com.mojang.minecraftpe.MainActivity")
                     .putExtra("data", intent.getStringExtra("data")).putExtra("session", session)
                     .putExtra("smallWindow", true).putExtra("directPip", true).putExtra("launchAttempt",intent.getStringExtra("launchAttempt"))
+                val display=android.util.DisplayMetrics()
+                windowManager.defaultDisplay.getRealMetrics(display)
+                val ratio=maxOf(display.widthPixels,display.heightPixels).toFloat()/minOf(display.widthPixels,display.heightPixels)
+                val aspect=if(ratio in 0.42f..2.39f)Rational(maxOf(display.widthPixels,display.heightPixels),minOf(display.widthPixels,display.heightPixels))else Rational(16,9)
                 val options = ActivityOptions.makeLaunchIntoPip(PictureInPictureParams.Builder()
-                    .setAspectRatio(Rational(16, 9)).setTitle(intent.getStringExtra("title") ?: "mcpy").build())
+                    .setAspectRatio(aspect).setTitle(intent.getStringExtra("title") ?: "mcpy").build())
                 startActivity(game, options.toBundle())
                 launched = true
             }

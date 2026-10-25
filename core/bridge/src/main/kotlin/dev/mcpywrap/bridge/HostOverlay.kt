@@ -52,7 +52,7 @@ internal class HostOverlay(context:Context, content:@Composable ()->Unit) : Auto
         Column(Modifier.padding(20.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
             Text("允许 $label 连接？",style=MaterialTheme.typography.titleLarge)
             Text(if(access=="shared")"允许编辑 mcpy 文件夹中的作品、构建模组和调试游戏。" else "允许通过接口编辑作品、构建模组和调试游戏。")
-            Text("仅在你刚刚发起连接时允许。以后可在 开发工具中断开。",style=MaterialTheme.typography.bodySmall)
+            Text("仅在你刚刚发起连接时允许。以后可在「开发」页断开。",style=MaterialTheme.typography.bodySmall)
             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.End){
                 TextButton(onClick=onLater){Text("稍后")}
                 TextButton(onClick=onDeny){Text("拒绝")}

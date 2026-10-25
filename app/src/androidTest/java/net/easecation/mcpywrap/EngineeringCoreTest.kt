@@ -1,4 +1,4 @@
-package dev.mcpywrap.android
+package net.easecation.mcpywrap
 
 import androidx.test.platform.app.InstrumentationRegistry
 import dev.mcpywrap.engineering.EngineeringClient
