@@ -25,7 +25,26 @@ public class MainActivity extends com.google.androidgamesdk.GameActivity {
  private volatile String phase="loading", error="";
  private volatile boolean hudReady=false;
  private volatile String lastScreen="";
+ private final dev.mcpy.game.WorldExitEvidence worldExitEvidence=new dev.mcpy.game.WorldExitEvidence();
+ private volatile JSONObject exitEvidence;
+ private long nextExitPoll;
+ private android.window.OnBackInvokedCallback systemBackCallback;
  private boolean autoPip=true, pipShown=false, pipRequested=false, directPip=false;
+ private int pipEntry;
+ private boolean confirmedInPip;
+ private long directPipDeadline;
+ private final Runnable confirmInitialPip=new Runnable(){public void run(){
+  if(isFinishing()||isDestroyed()||pipShown)return;
+  if(isInPictureInPictureMode()){recordPipEntry(true);revealGameWindow();pipShown=true;writeStatus();return;}
+  // makeLaunchIntoPip can still be applying its transition on first resume.
+  // A false return during that transition is not a permission denial.
+  try{
+   if(hasWindowFocus())enterPictureInPictureMode(new android.app.PictureInPictureParams.Builder().setAspectRatio(pipAspectRatio()).build());
+  }catch(Exception e){log("Initial PiP: "+e.getMessage());}
+  if(System.currentTimeMillis()<directPipDeadline)statusHandler.postDelayed(this,100);
+  else {revealGameWindow();log("Initial PiP not confirmed; retaining game for presentation recovery");writeStatus();}
+ }};
+ private void revealGameWindow(){android.view.WindowManager.LayoutParams window=getWindow().getAttributes();if(window.alpha!=1f){window.alpha=1f;getWindow().setAttributes(window);}}
  private dev.mcpy.game.FloatingPipButton editButton;
  private android.widget.LinearLayout loadingPanel;
  private android.widget.TextView loadingText;
@@ -66,6 +85,8 @@ public class MainActivity extends com.google.androidgamesdk.GameActivity {
   if(initialized&&gameSurface==null)gameSurface=findGameSurface(getWindow().getDecorView());
   try {JSONObject value=new JSONObject().put("phase",phase).put("loadingStage",loadingStage()).put("error",error).put("heartbeat",System.currentTimeMillis()).put("pid",android.os.Process.myPid()).put("pip",isInPictureInPictureMode()).put("pipRequested",autoPip).put("launchMode",directPip?"direct_pip":"activity").put("screen",lastScreen).put("serverReady",new File(session,"server-source.json").isFile()).put("loadingElapsedMs",System.currentTimeMillis()-started).put("code",phase.equals("failed")&&error.startsWith("启动超时")?(ready?"world_load_timeout":"engine_load_timeout"):"").put("renderWidth",fullRenderWidth).put("renderHeight",fullRenderHeight).put("bufferWidth",gameSurface==null?0:gameSurface.getHolder().getSurfaceFrame().width()).put("bufferHeight",gameSurface==null?0:gameSurface.getHolder().getSurfaceFrame().height()).put("viewWidth",gameSurface==null?0:gameSurface.getWidth()).put("viewHeight",gameSurface==null?0:gameSurface.getHeight());
    value.put("clientReady",step>=4);
+   value.put("pipEntry",pipEntry);
+   if(exitEvidence!=null)value.put("exit_evidence",exitEvidence);
    String transition=phase+":"+step+":"+value.optBoolean("pip")+":"+value.optBoolean("serverReady");
    try{if(!transition.equals(timelineState)){
     JSONObject event=new JSONObject().put("stage",phase).put("step",step).put("screen",lastScreen).put("pip",value.optBoolean("pip"))
@@ -84,6 +105,7 @@ public class MainActivity extends com.google.androidgamesdk.GameActivity {
  private void markWorldVisible(){
   if(hudReady&&step>=requests.size()&&(phase.equals("loading")||(phase.equals("failed")&&error.startsWith("启动超时")))){
    phase="running";error="";writeStatus();
+   worldExitEvidence.observe(true,worldFiles());
    runOnUiThread(this::updateLoadingPanel);
    if(autoPip&&!pipShown)runOnUiThread(this::maybeEnterSmallWindow);
   }
@@ -114,7 +136,8 @@ public class MainActivity extends com.google.androidgamesdk.GameActivity {
    keepRenderBuffer();
    pipRequested=true;if(!enterPictureInPictureMode(new android.app.PictureInPictureParams.Builder().setAspectRatio(pipAspectRatio()).build()))pipRequested=false;}catch(Exception e){pipRequested=false;log("PiP: "+e.getMessage());}
  }
- @Override public void onPictureInPictureModeChanged(boolean inPip,android.content.res.Configuration config){super.onPictureInPictureModeChanged(inPip,config);pipRequested=inPip;if(inPip){pipShown=true;android.view.WindowManager.LayoutParams window=getWindow().getAttributes();window.alpha=1f;getWindow().setAttributes(window);}else if(pipShown)setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);updateLoadingPanel();if(editButton!=null){editButton.setVisibility(inPip?android.view.View.GONE:android.view.View.VISIBLE);if(!inPip)editButton.post(editButton::restorePosition);}if(!inPip&&gameSurface!=null)gameSurface.post(this::keepRenderBuffer);writeStatus();}
+ private void recordPipEntry(boolean inPip){if(inPip&&!confirmedInPip)pipEntry++;confirmedInPip=inPip;}
+ @Override public void onPictureInPictureModeChanged(boolean inPip,android.content.res.Configuration config){super.onPictureInPictureModeChanged(inPip,config);recordPipEntry(inPip);pipRequested=inPip;if(inPip){pipShown=true;android.view.WindowManager.LayoutParams window=getWindow().getAttributes();window.alpha=1f;getWindow().setAttributes(window);}else if(pipShown)setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);updateLoadingPanel();if(editButton!=null){editButton.setVisibility(inPip?android.view.View.GONE:android.view.View.VISIBLE);if(!inPip)editButton.post(editButton::restorePosition);}if(!inPip&&gameSurface!=null)gameSurface.post(this::keepRenderBuffer);writeStatus();}
  private void keepRenderBuffer(){
   if(gameSurface==null||fullRenderWidth<=0||fullRenderHeight<=0)return;
   android.graphics.Rect frame=gameSurface.getHolder().getSurfaceFrame();
@@ -137,14 +160,11 @@ public class MainActivity extends com.google.androidgamesdk.GameActivity {
  // before revealing the transparent window, without waiting for engine readiness.
  @Override protected void onResume(){
   super.onResume();
+  if(pipShown)revealGameWindow();
   if(directPip&&!pipShown){
-   try{
-    if(isInPictureInPictureMode()){
-     pipShown=true;android.view.WindowManager.LayoutParams window=getWindow().getAttributes();window.alpha=1f;getWindow().setAttributes(window);
-    }else if(!enterPictureInPictureMode(new android.app.PictureInPictureParams.Builder().setAspectRatio(pipAspectRatio()).build())){
-     phase="failed";error="系统未允许进入游戏画中画，请在 App 检查权限";writeStatus();finish();
-    }
-   }catch(Exception e){phase="failed";error="画中画启动失败："+e.getMessage();writeStatus();finish();}
+   if(directPipDeadline==0)directPipDeadline=System.currentTimeMillis()+5000;
+   statusHandler.removeCallbacks(confirmInitialPip);
+   statusHandler.post(confirmInitialPip);
   }
  }
  @Override protected void onUserLeaveHint(){super.onUserLeaveHint();if(!stopping&&autoPip)showSmallWindow();}
@@ -233,6 +253,10 @@ public class MainActivity extends com.google.androidgamesdk.GameActivity {
    nativeWaitCrashManagementSetupComplete();
    nativeCopyInnerAsset();
    initialized=true;log("GameActivity initialized");android.util.Log.i("McpyGame","GameActivity initialized");
+   if(android.os.Build.VERSION.SDK_INT>=33){
+    systemBackCallback=this::onBackPressed;
+    getOnBackInvokedDispatcher().registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT,systemBackCallback);
+   }
    editButton=new dev.mcpy.game.FloatingPipButton(this,this::showSmallWindow);
    int buttonSize=Math.round(48*getResources().getDisplayMetrics().density);
    android.widget.FrameLayout.LayoutParams lp=new android.widget.FrameLayout.LayoutParams(buttonSize,buttonSize,android.view.Gravity.TOP|android.view.Gravity.LEFT);
@@ -317,14 +341,48 @@ public class MainActivity extends com.google.androidgamesdk.GameActivity {
   else{target.getParentFile().mkdirs();if(target.isFile()&&path.startsWith("demo-addon/"))return;try(InputStream in=getAssets().open(path);OutputStream out=new FileOutputStream(target)){byte[] buffer=new byte[65536];int n;while((n=in.read(buffer))!=-1)out.write(buffer,0,n);}}
  }
  private static String rpc(String module,String function,JSONArray args)throws JSONException{return new JSONObject().put("module_name",module).put("func_name",function).put("args",args).put("use_instance",false).toString();}
+ private dev.mcpy.game.WorldExitEvidence.Files worldFiles(){
+  return dev.mcpy.game.WorldFileHandles.inspect(new File(data,"minecraftWorlds/"+launch.optString("worldId","local-world")));
+ }
+ private void finishSaved(JSONObject evidence)throws Exception{
+  File temporary=new File(session,"save-exit.complete.tmp");
+  try(FileOutputStream out=new FileOutputStream(temporary)){out.write(evidence.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));out.getFD().sync();}
+  Files.move(temporary.toPath(),new File(session,"save-exit.complete").toPath(),java.nio.file.StandardCopyOption.REPLACE_EXISTING,java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+  phase="saved";writeStatus();runOnUiThread(this::finish);
+ }
+ private void pollWorldExit(){
+  if(System.currentTimeMillis()<nextExitPoll)return;
+  active=true;nextExitPoll=System.currentTimeMillis()+500;
+  try{
+   NativeBridge.dispatch(this,rpc("__builtin__","eval",new JSONArray().put("__import__('clientlevel').get_level_id() not in (None, -1, '-1')")),new com.facebook.react.bridge.Callback((code,result)->{
+    try{
+     Object present=new JSONObject(result).opt("ret");
+     if(code!=0||!(present instanceof Boolean)){
+      worldExitEvidence.observe(false,dev.mcpy.game.WorldExitEvidence.Files.UNKNOWN);return;
+     }
+     boolean hasWorld=(Boolean)present;
+     dev.mcpy.game.WorldExitEvidence.Files files=worldFiles();
+     boolean complete=worldExitEvidence.observe(hasWorld,files);
+     if(worldExitEvidence.hasSeenWorld()&&!hasWorld){phase="saving";runOnUiThread(this::updateLoadingPanel);}
+     if(phase.equals("saving")){
+      exitEvidence=new JSONObject().put("world_unloaded",!hasWorld).put("world_files",files.name().toLowerCase(java.util.Locale.ROOT))
+       .put("confirmed",complete).put("source",stopping?"host_request":"game_exit").put("observed_at",System.currentTimeMillis()).put("screen",lastScreen);
+      if(complete){log("save confirmed: "+exitEvidence);finishSaved(exitEvidence);}else writeStatus();
+     }
+    }catch(Exception e){log("Exit observation: "+e);}
+    finally{active=false;}
+   }));
+  }catch(Exception e){active=false;log("Exit observation: "+e);}
+ }
  public void setRuntimeMsg(String message){
   if(message.contains("engineIsReady")){if(!ready)log("engine_ready");ready=true;}
   try{JSONObject status=new JSONObject(message);
-   if(status.has("top_screen")){String screen=status.getString("top_screen");if(!screen.equals(lastScreen))log("screen: "+screen);lastScreen=screen;}
+   if(status.has("top_screen")){String screen=status.getString("top_screen");if(!screen.equals(lastScreen))log("screen: "+screen);lastScreen=screen;
+    if(phase.equals("running")&&screen.contains("world_saving_progress_screen")){phase="saving";writeStatus();runOnUiThread(this::updateLoadingPanel);}}
    if("hud_screen".equals(status.optString("top_screen"))){hudReady=true;markWorldVisible();}status.remove("rn_call_python");android.util.Log.i("McpyRuntime",status.toString());}catch(JSONException invalid){android.util.Log.w("McpyRuntime","Non-JSON runtime status");}
  }
  public void tick(){
-  if(!initialized||phase.equals("saved"))return;
+  if(!initialized||phase.equals("saved")||phase.equals("cancelled"))return;
   if(phase.equals("loading")&&System.currentTimeMillis()-started>300000){phase="failed";error="启动超时，请查看运行日志";writeStatus();}
   if(pendingServer!=null){
    String identity=pendingServer;File reply=new File(control,identity+".server.json");
@@ -335,22 +393,26 @@ public class MainActivity extends com.google.androidgamesdk.GameActivity {
   }
   if(!ready||active||System.currentTimeMillis()<next)return;
   if(new File(session,"save-exit.request").isFile()){stopping=true;new File(session,"save-exit.request").delete();}
-  if(stopping){
+  if(stopping&&step<4){
+   // No play_world request has been submitted. Cancellation is not a saved world.
+   phase="cancelled";writeStatus();runOnUiThread(this::finish);return;
+  }
+  // A submitted play_world may still be opening the database. Finish its
+  // readiness checks before requesting a save; never race quit against open.
+  if(stopping&&step>=requests.size()){
+   if(quitSent||phase.equals("saving")){pollWorldExit();return;}
    phase="saving";active=true;
    try {
-    String expression=quitSent?"__import__('clientlevel').get_level_id() in (None, -1, '-1')":"(__import__('minecraft').instance.quit_local_game(), False)[1]";
+    String expression="(__import__('minecraft').instance.quit_local_game(), False)[1]";
     NativeBridge.dispatch(this,rpc("__builtin__","eval",new JSONArray().put(expression)),new com.facebook.react.bridge.Callback((code,result)->{
      android.util.Log.i("McpyLifecycle","save-exit "+code+" "+result);
-     try { if(code==0&&Boolean.TRUE.equals(new JSONObject(result).opt("ret"))){
-      try(FileOutputStream out=new FileOutputStream(new File(session,"save-exit.complete"))){out.write(result.getBytes(java.nio.charset.StandardCharsets.UTF_8));}
-      phase="saved";writeStatus();runOnUiThread(()->{finish();});
-     }}catch(Exception e){android.util.Log.e("McpyLifecycle","Save exit",e);}
+     // Acceptance of quit_local_game is not completion of the save.
      quitSent=true;next=System.currentTimeMillis()+250;active=false;
     }));
    }catch(JSONException e){active=false;throw new IllegalStateException(e);}
    return;
   }
-  if(step>=requests.size()){pollControl();return;}
+  if(step>=requests.size()){pollControl();if(!active)pollWorldExit();return;}
   active=true; final int current=step;
   NativeBridge.dispatch(this,requests.get(step),new com.facebook.react.bridge.Callback((code,result)->{
    log("bootstrap step="+current+" code="+code+(code==0?"":" result="+result.substring(0,Math.min(result.length(),1024))));
@@ -360,6 +422,7 @@ public class MainActivity extends com.google.androidgamesdk.GameActivity {
     if(code==0&&value.has("ret")&&!Boolean.FALSE.equals(value.opt("ret"))){
      step++;
      if(current==requests.size()-1){
+      worldExitEvidence.observe(true,worldFiles());
       markWorldVisible();
       try(FileOutputStream out=new FileOutputStream(new File(session,"engine-proof.json"))){out.write(value.toString(2).getBytes(java.nio.charset.StandardCharsets.UTF_8));}
      }
@@ -368,8 +431,18 @@ public class MainActivity extends com.google.androidgamesdk.GameActivity {
    active=false;
   }));
  }
- @Override public void onBackPressed(){stopping=true;}
- @Override protected void onDestroy(){statusHandler.removeCallbacks(heartbeat);if(!phase.equals("saved")){phase="interrupted";writeStatus();}super.onDestroy();android.os.Process.killProcess(android.os.Process.myPid());}
+ @Override public void onBackPressed(){
+  // Back belongs to the game's screen stack (pause menu, inventory, etc.).
+  // It must never be translated into the host's save-and-exit request.
+  if(initialized&&ready&&!stopping&&!phase.equals("saving")&&!phase.equals("saved")&&!phase.equals("cancelled"))nativeBackPressed();
+ }
+ @Override protected void onDestroy(){
+  statusHandler.removeCallbacks(heartbeat);
+  statusHandler.removeCallbacks(confirmInitialPip);
+  if(android.os.Build.VERSION.SDK_INT>=33&&systemBackCallback!=null)getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback(systemBackCallback);
+  if(!phase.equals("saved")&&!phase.equals("cancelled")){phase="interrupted";writeStatus();}
+  super.onDestroy();android.os.Process.killProcess(android.os.Process.myPid());
+ }
  public boolean checkKeepStartSize(){return false;}
  public boolean isNetworkEnabled(boolean wifi){return false;}
  public String getExternalStoragePath(){return root();}

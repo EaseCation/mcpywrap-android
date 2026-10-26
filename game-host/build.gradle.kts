@@ -5,7 +5,7 @@ android { namespace = "dev.mcpy.game"; compileSdk = 34; ndkVersion = "25.1.89373
  sourceSets["main"].jniLibs.srcDir("src/main/jniLibs")
 
 }
-dependencies { compileOnly(project(":engine-contract")) }
+dependencies { compileOnly(project(":engine-contract")); testImplementation("junit:junit:4.13.2") }
 
 val buildNative by tasks.registering(Exec::class) {
     inputs.file("src/main/cpp/bridge.cpp")

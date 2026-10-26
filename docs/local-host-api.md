@@ -61,6 +61,8 @@ Content-Type: application/json
 
 `status` 中的 `pip` 是 Android 画中画标志，不是 Python 环境状态。`loadingStage` 描述当前加载阶段；`serverReady` 表示服务端源码初始化记录已生成，仍应通过双端运行时探针验证具体模组。`bufferWidth/Height` 是游戏渲染缓冲区大小，`viewWidth/Height` 是当前窗口视图大小；截图来自完整缓冲区，不能单独证明聊天页上方的小窗可见。
 
+游戏菜单中的「保存并退出」和宿主 `stop` 共用保存完成确认。`status.exit_evidence` 提供 `world_unloaded`、`world_files`（`open/closed/unknown`）、`confirmed`、`source`（`game_exit/host_request`）、`observed_at`、查询时计算的 `age_ms` 与采样时的 `screen`。只有本次会话观察到已进入世界、世界文件曾打开，随后连续采样确认世界卸载且文件句柄关闭，才写入会话目录的 `save-exit.complete` 并转为 `saved`。这不是独立的游戏存档校验工具，也不能保证异常断电后的物理介质持久性。检查失败、超时或进程消失不作为保存成功证据；世界尚未开始加载时的取消记为 `cancelled`。画面名称仅用于诊断，不用主菜单或保存页的显示状态代替完成确认。
+
 ## 开发端准备阶段
 
 具有共享目录授权且声明 `preparation_client` 的请求，可以收到 `waiting_preparation` 与 `preparation` 对象（`id/kind/options/core_version`）。由标准 CLI 执行限定的 Git 源获取、pip、工具环境、包元数据查询和已声明脚本，并将 `{"ok":true,"result":...}` 或结构化错误提交到 `/v2/operations/{id}/preparation/{step}`。

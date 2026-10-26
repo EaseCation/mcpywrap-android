@@ -118,6 +118,7 @@ jobs:
       - name: Build APK, run unit tests and lint
         run: |
           sh tools/build.sh --no-daemon --stacktrace \
+            :game-host:testDebugUnitTest \
             :core:workspace:testDebugUnitTest \
             :core:bridge:testDebugUnitTest \
             :runtime-core:testDebugUnitTest \

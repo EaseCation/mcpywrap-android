@@ -48,8 +48,12 @@ class SessionObservationTest {
         assertEquals("interrupted",result.getString("phase"));assertEquals("engine_exited",result.getString("code"))
     }
     @Test fun savedSessionDoesNotBecomeFailureWhenItsProcessExits(){
-        val result=SessionObservation.resolve(JSONObject().put("phase","saved").put("pid",42).put("heartbeat",1000),null,500,99_000,false)
+        val evidence=JSONObject().put("observed_at",900).put("confirmed",true)
+        val raw=JSONObject().put("phase","saved").put("pid",42).put("heartbeat",1000).put("exit_evidence",evidence)
+        val result=SessionObservation.resolve(raw,null,500,99_000,false)
         assertEquals("saved",result.getString("phase"))
+        assertEquals(98_100,result.getJSONObject("exit_evidence").getLong("age_ms"))
+        assertFalse(evidence.has("age_ms"))
     }
     @Test fun bootstrapFailureIsAvailableBeforeEngineHeartbeat(){
         val bootstrap=JSONObject().put("phase","failed").put("pid",42).put("observed_at",1000).put("error","APK missing")

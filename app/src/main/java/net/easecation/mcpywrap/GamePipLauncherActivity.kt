@@ -16,25 +16,41 @@ class GamePipLauncherActivity : Activity() {
     private val handler = Handler(android.os.Looper.getMainLooper())
     private var launched = false
     private var callerRestored = false
+    private var handledPipEntry = 0
     private var observing = false
+    private var resumed = false
+    private var forwardedPipEntry = 0
+
+    private fun canYieldSourceTask(): Boolean {
+        if (!resumed || !hasWindowFocus()) return false
+        // PiP status is cross-process and can lag behind expansion. Android may
+        // already have reparented the game into this task while it still says true.
+        val task = getSystemService(android.app.ActivityManager::class.java).appTasks
+            .firstOrNull { it.taskInfo.taskId == taskId }?.taskInfo ?: return false
+        return task.topActivity == componentName && task.numActivities == 1
+    }
 
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
         launched = state?.getBoolean("launched") ?: false
         callerRestored = state?.getBoolean("callerRestored") ?: false
+        handledPipEntry = state?.getInt("handledPipEntry") ?: 0
+        forwardedPipEntry = state?.getInt("forwardedPipEntry") ?: 0
     }
 
     override fun onSaveInstanceState(state: Bundle) {
         state.putBoolean("launched", launched)
         state.putBoolean("callerRestored", callerRestored)
+        state.putInt("handledPipEntry", handledPipEntry)
+        state.putInt("forwardedPipEntry", forwardedPipEntry)
         super.onSaveInstanceState(state)
     }
 
     override fun onResume() {
         super.onResume()
-        // Expanding then minimizing the game exposes this transparent source again.
-        // Yield on every resume, not just the initial launch, so it cannot cover the caller.
-        callerRestored = false
+        resumed = true
+        // Expansion temporarily resumes this source before reparenting the game.
+        // Do not re-arm yielding here: only a NEW confirmed PiP entry may do that.
         if (observing) return
         val session = intent.getStringExtra("session") ?: run { finish(); return }
         fun validAttempt():Boolean=runCatching{
@@ -66,15 +82,35 @@ class GamePipLauncherActivity : Activity() {
             observing = true
             handler.post(object : Runnable {
                 override fun run() {
-                    if (isDestroyed || isFinishing) return
+                    if (isDestroyed || isFinishing || !resumed) { observing = false; return }
                     val value = runCatching { JSONObject(status.readText()) }.getOrNull()
-                    if (value?.optBoolean("pip") == true && !callerRestored) {
-                        callerRestored = true
+                    val entry = value?.optInt("pipEntry", 0) ?: 0
+                    // launchIntoPip restores the source task on system expansion,
+                    // not necessarily the separately pinned game task. Bring the
+                    // existing game task forward; never instantiate another game.
+                    if (entry > forwardedPipEntry && entry <= handledPipEntry &&
+                        value?.optBoolean("pip") == false && canYieldSourceTask() &&
+                        value.optString("phase") in listOf("loading", "running", "saving")) {
+                        val activities = getSystemService(android.app.ActivityManager::class.java)
+                        // A directly pinned task may not be in appTasks/Recents.
+                        // Running tasks still exposes our own existing game task.
+                        val gameTask = activities.getRunningTasks(100).firstOrNull {
+                            it.topActivity?.packageName == packageName &&
+                                it.topActivity?.className == "com.mojang.minecraftpe.MainActivity"
+                        }
+                        if (gameTask != null) {
+                            runCatching { activities.moveTaskToFront(gameTask.taskId, 0) }
+                                .onSuccess { forwardedPipEntry = entry }
+                                .onFailure { android.util.Log.w("McpyPiP", "Cannot restore existing game task", it) }
+                        }
+                    }
+                    if (value?.optBoolean("pip") == true && entry > handledPipEntry && canYieldSourceTask()) {
                         // Finishing the source can dismiss the pinned child on OEM systems.
                         // Keep this transparent task behind the caller until the session ends.
-                        moveTaskToBack(true)
+                        handledPipEntry = entry
+                        callerRestored = moveTaskToBack(true)
                     }
-                    if (value?.optString("phase") in listOf("saved", "failed", "interrupted") || !validAttempt()) finish()
+                    if (value?.optString("phase") in listOf("saved", "failed", "interrupted", "cancelled") || !validAttempt()) finish()
                     else handler.postDelayed(this, if (callerRestored) 500 else 100)
                 }
             })
@@ -83,6 +119,13 @@ class GamePipLauncherActivity : Activity() {
                 .put("code", if(error is SecurityException)"launch_blocked_by_os"else "pip_launch_failed").toString().toByteArray())
             finish()
         }
+    }
+
+    override fun onPause() {
+        resumed = false
+        handler.removeCallbacksAndMessages(null)
+        observing = false
+        super.onPause()
     }
 
     override fun onDestroy() {

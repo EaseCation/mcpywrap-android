@@ -3,6 +3,7 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.REORDER_TASKS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -27,7 +28,7 @@
             </intent-filter>
         </activity>
         <activity android:name=".GamePipLauncherActivity" android:exported="false" android:taskAffinity="${applicationId}.game" android:excludeFromRecents="true" android:theme="@style/Theme.Mcpy.PipLauncher" />
-        <activity android:name="com.mojang.minecraftpe.MainActivity" android:process=":game" android:launchMode="singleTop" android:taskAffinity="${applicationId}.game" android:exported="false" android:theme="@style/Theme.Mcpy.PipLauncher" android:supportsPictureInPicture="true" android:resizeableActivity="true" android:configChanges="orientation|screenSize|keyboardHidden|keyboard|uiMode|density|locale|layoutDirection|fontScale|navigation|screenLayout|smallestScreenSize|touchscreen">
+        <activity android:name="com.mojang.minecraftpe.MainActivity" android:process=":game" android:launchMode="singleTop" android:taskAffinity="${applicationId}.game" android:exported="false" android:theme="@style/Theme.Mcpy.PipLauncher" android:enableOnBackInvokedCallback="true" android:supportsPictureInPicture="true" android:resizeableActivity="true" android:configChanges="orientation|screenSize|keyboardHidden|keyboard|uiMode|density|locale|layoutDirection|fontScale|navigation|screenLayout|smallestScreenSize|touchscreen">
             <meta-data android:name="android.app.lib_name" android:value="minecraftpe"/>
         </activity>
         <service android:name="androidx.work.impl.foreground.SystemForegroundService" android:foregroundServiceType="dataSync" tools:node="merge" />

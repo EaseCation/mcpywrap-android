@@ -6,6 +6,10 @@ import org.json.JSONObject
 object SessionObservation {
     fun resolve(raw:JSONObject,bootstrap:JSONObject?,created:Long,now:Long,alive:Boolean?,handoff:JSONObject?=null,launchTimeoutMs:Long=20_000):JSONObject {
         val value=JSONObject(raw.toString())
+        value.optJSONObject("exit_evidence")?.let { evidence ->
+            val observed=evidence.optLong("observed_at").takeIf{it>0}
+            evidence.put("age_ms",observed?.let{(now-it).coerceAtLeast(0)}?:JSONObject.NULL)
+        }
         val reported=raw.optString("phase","unknown")
         if(reported=="launch_pending")value.put("phase","loading")
         val pid=raw.optInt("pid",bootstrap?.optInt("pid",0)?:0)
