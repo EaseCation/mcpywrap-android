@@ -34,7 +34,10 @@ def shot(name):
  b=run('exec-out','screencap','-p');(out/(name+'.png')).write_bytes(b[b.index(b'\x89PNG\r\n\x1a\n'):])
 def full():
  st=status()
- return not st['pip'] and st['viewWidth']==st['bufferWidth'] and 'com.mojang.minecraftpe.MainActivity}' in shell('dumpsys window | grep mCurrentFocus')
+ return (not st['pip'] and st['viewWidth']==st['bufferWidth']
+  and st['viewHeight']==st['bufferHeight'] and st['windowWidth']>st['windowHeight']
+  and st['requestedOrientation']==0 and st['minimizeButtonVisible']
+  and 'com.mojang.minecraftpe.MainActivity}' in shell('dumpsys window | grep mCurrentFocus'))
 if os.environ.get('MCPY_WAIT_RUNNING') == '1':
  wait('world running before expansion',lambda:status()['phase']=='running',300)
 for i in range(int(sys.argv[1]) if len(sys.argv)>1 else 5):

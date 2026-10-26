@@ -39,10 +39,10 @@ public class MainActivity extends com.google.androidgamesdk.GameActivity {
   // makeLaunchIntoPip can still be applying its transition on first resume.
   // A false return during that transition is not a permission denial.
   try{
-   if(hasWindowFocus())enterPictureInPictureMode(new android.app.PictureInPictureParams.Builder().setAspectRatio(pipAspectRatio()).build());
+   enterPictureInPictureMode(new android.app.PictureInPictureParams.Builder().setAspectRatio(pipAspectRatio()).build());
   }catch(Exception e){log("Initial PiP: "+e.getMessage());}
   if(System.currentTimeMillis()<directPipDeadline)statusHandler.postDelayed(this,100);
-  else {revealGameWindow();log("Initial PiP not confirmed; retaining game for presentation recovery");writeStatus();}
+  else {syncPresentation();log("Initial PiP not confirmed; retaining game for presentation recovery");writeStatus();}
  }};
  private void revealGameWindow(){android.view.WindowManager.LayoutParams window=getWindow().getAttributes();if(window.alpha!=1f){window.alpha=1f;getWindow().setAttributes(window);}}
  private dev.mcpy.game.FloatingPipButton editButton;
@@ -54,7 +54,7 @@ public class MainActivity extends com.google.androidgamesdk.GameActivity {
  private android.content.res.Configuration renderConfiguration;
  private long started=System.currentTimeMillis();
  private final android.os.Handler statusHandler=new android.os.Handler(android.os.Looper.getMainLooper());
- private final Runnable heartbeat=new Runnable(){public void run(){maybeEnterSmallWindow();pollCapture();writeStatus();updateLoadingPanel();statusHandler.postDelayed(this,2000);}};
+ private final Runnable heartbeat=new Runnable(){public void run(){syncPresentation();maybeEnterSmallWindow();pollCapture();writeStatus();updateLoadingPanel();statusHandler.postDelayed(this,2000);}};
  private String loadingStage(){
   if(phase.equals("saving"))return "正在保存世界，请稍候";
   if(phase.equals("failed"))return error.isEmpty()?"游戏启动失败，请返回编辑器查看日志":error;
@@ -69,7 +69,7 @@ public class MainActivity extends com.google.androidgamesdk.GameActivity {
  private void updateLoadingPanel(){
   if(loadingPanel==null)return;
   String label=loadingStage();loadingPanel.setVisibility(label.isEmpty()?android.view.View.GONE:android.view.View.VISIBLE);
-  boolean compact=isInPictureInPictureMode()||(directPip&&!pipShown);
+  boolean compact=isInPictureInPictureMode()||(directPip&&!pipShown&&directPipDeadline>System.currentTimeMillis());
   loadingText.setTextSize(compact?11:16);
   loadingPanel.setGravity(compact?android.view.Gravity.CENTER:android.view.Gravity.START);
   android.widget.FrameLayout.LayoutParams layout=(android.widget.FrameLayout.LayoutParams)loadingPanel.getLayoutParams();
@@ -85,7 +85,10 @@ public class MainActivity extends com.google.androidgamesdk.GameActivity {
   if(initialized&&gameSurface==null)gameSurface=findGameSurface(getWindow().getDecorView());
   try {JSONObject value=new JSONObject().put("phase",phase).put("loadingStage",loadingStage()).put("error",error).put("heartbeat",System.currentTimeMillis()).put("pid",android.os.Process.myPid()).put("pip",isInPictureInPictureMode()).put("pipRequested",autoPip).put("launchMode",directPip?"direct_pip":"activity").put("screen",lastScreen).put("serverReady",new File(session,"server-source.json").isFile()).put("loadingElapsedMs",System.currentTimeMillis()-started).put("code",phase.equals("failed")&&error.startsWith("启动超时")?(ready?"world_load_timeout":"engine_load_timeout"):"").put("renderWidth",fullRenderWidth).put("renderHeight",fullRenderHeight).put("bufferWidth",gameSurface==null?0:gameSurface.getHolder().getSurfaceFrame().width()).put("bufferHeight",gameSurface==null?0:gameSurface.getHolder().getSurfaceFrame().height()).put("viewWidth",gameSurface==null?0:gameSurface.getWidth()).put("viewHeight",gameSurface==null?0:gameSurface.getHeight());
    value.put("clientReady",step>=4);
-   value.put("pipEntry",pipEntry);
+   value.put("pipEntry",pipEntry).put("requestedOrientation",getRequestedOrientation());
+   android.view.View decor=getWindow().getDecorView();
+   value.put("windowWidth",decor.getWidth()).put("windowHeight",decor.getHeight()).put("windowFocused",hasWindowFocus())
+    .put("minimizeButtonVisible",editButton!=null&&editButton.getVisibility()==android.view.View.VISIBLE);
    if(exitEvidence!=null)value.put("exit_evidence",exitEvidence);
    String transition=phase+":"+step+":"+value.optBoolean("pip")+":"+value.optBoolean("serverReady");
    try{if(!transition.equals(timelineState)){
@@ -113,7 +116,7 @@ public class MainActivity extends com.google.androidgamesdk.GameActivity {
  // Return to the caller while the world loads, before Android can suspend its tool process.
  // Wait for a real full-size surface, so the engine keeps the complete framebuffer in PiP.
  private void maybeEnterSmallWindow(){
-  if(directPip){if(isInPictureInPictureMode())pipShown=true;return;}
+  if(directPip)return;
   if(!autoPip||pipShown||!initialized||!ready||step<2||stopping||phase.equals("failed"))return;
   android.view.SurfaceView surface=findGameSurface(getWindow().getDecorView());
   if(surface==null||surface.getWidth()<=0||surface.getHeight()<=0||!surface.getHolder().getSurface().isValid())return;
@@ -137,7 +140,40 @@ public class MainActivity extends com.google.androidgamesdk.GameActivity {
    pipRequested=true;if(!enterPictureInPictureMode(new android.app.PictureInPictureParams.Builder().setAspectRatio(pipAspectRatio()).build()))pipRequested=false;}catch(Exception e){pipRequested=false;log("PiP: "+e.getMessage());}
  }
  private void recordPipEntry(boolean inPip){if(inPip&&!confirmedInPip)pipEntry++;confirmedInPip=inPip;}
- @Override public void onPictureInPictureModeChanged(boolean inPip,android.content.res.Configuration config){super.onPictureInPictureModeChanged(inPip,config);recordPipEntry(inPip);pipRequested=inPip;if(inPip){pipShown=true;android.view.WindowManager.LayoutParams window=getWindow().getAttributes();window.alpha=1f;getWindow().setAttributes(window);}else if(pipShown)setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);updateLoadingPanel();if(editButton!=null){editButton.setVisibility(inPip?android.view.View.GONE:android.view.View.VISIBLE);if(!inPip)editButton.post(editButton::restorePosition);}if(!inPip&&gameSurface!=null)gameSurface.post(this::keepRenderBuffer);writeStatus();}
+ @Override public void onPictureInPictureModeChanged(boolean inPip,android.content.res.Configuration config){
+  super.onPictureInPictureModeChanged(inPip,config);
+  syncPresentation();writeStatus();
+ }
+ private void syncPresentation(){
+  if(!initialized||isFinishing()||isDestroyed())return;
+  boolean inPip=isInPictureInPictureMode();
+  recordPipEntry(inPip);
+  if(inPip){pipShown=true;pipRequested=true;revealGameWindow();}
+  boolean attemptFinished=directPipDeadline>0&&System.currentTimeMillis()>=directPipDeadline;
+  boolean fullscreen=dev.mcpy.game.GamePresentation.fullscreen(inPip,directPip,pipShown,attemptFinished);
+  if(fullscreen){
+   pipRequested=false;
+   if(getRequestedOrientation()!=android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE)
+    setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+   revealGameWindow();
+  }
+  if(editButton!=null){
+   int visibility=fullscreen?android.view.View.VISIBLE:android.view.View.GONE;
+   if(editButton.getVisibility()!=visibility){editButton.setVisibility(visibility);if(fullscreen)editButton.post(editButton::restorePosition);}
+  }
+  keepRenderBuffer();fitGameSurface();updateLoadingPanel();
+ }
+ private void fitGameSurface(){
+  if(gameSurface==null||!(gameSurface.getParent() instanceof android.widget.FrameLayout))return;
+  android.widget.FrameLayout parent=(android.widget.FrameLayout)gameSurface.getParent();
+  int[] size=dev.mcpy.game.GamePresentation.fit(parent.getWidth(),parent.getHeight(),fullRenderWidth,fullRenderHeight);
+  if(size[0]==0||size[1]==0)return;
+  android.widget.FrameLayout.LayoutParams params=(android.widget.FrameLayout.LayoutParams)gameSurface.getLayoutParams();
+  if(params.width!=size[0]||params.height!=size[1]||params.gravity!=android.view.Gravity.CENTER){
+   params.width=size[0];params.height=size[1];params.gravity=android.view.Gravity.CENTER;
+   gameSurface.setLayoutParams(params);
+  }
+ }
  private void keepRenderBuffer(){
   if(gameSurface==null||fullRenderWidth<=0||fullRenderHeight<=0)return;
   android.graphics.Rect frame=gameSurface.getHolder().getSurfaceFrame();
@@ -155,13 +191,13 @@ public class MainActivity extends com.google.androidgamesdk.GameActivity {
  // The pinned GameActivity dispatches onPauseNative virtually. Android still receives onPause;
  // only the engine pause is deferred while the game remains visible in PiP.
  @Override protected void onPauseNative(long handle){if(!pipRequested&&!isInPictureInPictureMode())super.onPauseNative(handle);}
- @Override public void onWindowFocusChanged(boolean focused){super.onWindowFocusChanged(focused||pipRequested||isInPictureInPictureMode());}
+ @Override public void onWindowFocusChanged(boolean focused){super.onWindowFocusChanged(focused||pipRequested||isInPictureInPictureMode());if(focused)syncPresentation();}
  // Some vendor systems ignore launch-into-PiP options. Enter on first resume,
  // before revealing the transparent window, without waiting for engine readiness.
  @Override protected void onResume(){
   super.onResume();
-  if(pipShown)revealGameWindow();
-  if(directPip&&!pipShown){
+  syncPresentation();
+  if(initialized&&directPip&&!pipShown&&(directPipDeadline==0||System.currentTimeMillis()<directPipDeadline)){
    if(directPipDeadline==0)directPipDeadline=System.currentTimeMillis()+5000;
    statusHandler.removeCallbacks(confirmInitialPip);
    statusHandler.post(confirmInitialPip);
@@ -238,6 +274,8 @@ public class MainActivity extends com.google.androidgamesdk.GameActivity {
    if(gameSurface!=null){
     gameSurface.getHolder().setFixedSize(fullRenderWidth,fullRenderHeight);
     gameSurface.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or_,ob)->keepRenderBuffer());
+    if(gameSurface.getParent() instanceof android.view.View)
+     ((android.view.View)gameSurface.getParent()).addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or_,ob)->fitGameSurface());
    }
    if(getPackageManager().hasSystemFeature(android.content.pm.PackageManager.FEATURE_PICTURE_IN_PICTURE))setPictureInPictureParams(new android.app.PictureInPictureParams.Builder().setAspectRatio(pipAspectRatio()).build());
    getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
@@ -253,6 +291,12 @@ public class MainActivity extends com.google.androidgamesdk.GameActivity {
    nativeWaitCrashManagementSetupComplete();
    nativeCopyInnerAsset();
    initialized=true;log("GameActivity initialized");android.util.Log.i("McpyGame","GameActivity initialized");
+   if(directPip){
+    // Some OEM launch-into-PiP paths omit onResume and the initial PiP callback.
+    // Observe the real mode after native setup instead of relying on either one.
+    directPipDeadline=System.currentTimeMillis()+5000;
+    statusHandler.post(confirmInitialPip);
+   }
    if(android.os.Build.VERSION.SDK_INT>=33){
     systemBackCallback=this::onBackPressed;
     getOnBackInvokedDispatcher().registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT,systemBackCallback);
@@ -269,7 +313,7 @@ public class MainActivity extends com.google.androidgamesdk.GameActivity {
    loadingPanel.addView(loadingText);
    loadingProgress=new android.widget.ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);loadingProgress.setIndeterminate(true);loadingPanel.addView(loadingProgress);
    android.widget.FrameLayout.LayoutParams loadingLayout=new android.widget.FrameLayout.LayoutParams(Math.min((int)(400*density),getResources().getDisplayMetrics().widthPixels-(int)(180*density)),-2,android.view.Gravity.TOP|android.view.Gravity.START);
-   loadingLayout.setMargins(pad,pad,pad,pad);addContentView(loadingPanel,loadingLayout);updateLoadingPanel();editButton.setVisibility(isInPictureInPictureMode()||directPip?android.view.View.GONE:android.view.View.VISIBLE);editButton.bringToFront();
+   loadingLayout.setMargins(pad,pad,pad,pad);addContentView(loadingPanel,loadingLayout);updateLoadingPanel();editButton.setVisibility(isInPictureInPictureMode()||directPip?android.view.View.GONE:android.view.View.VISIBLE);editButton.bringToFront();syncPresentation();
 
   } catch(Throwable e){phase="failed";error=e.toString();log(android.util.Log.getStackTraceString(e));writeStatus();throw new IllegalStateException("Game startup failed",e);}
  }
